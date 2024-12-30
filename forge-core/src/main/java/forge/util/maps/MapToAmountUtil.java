@@ -1,17 +1,14 @@
 package forge.util.maps;
 
+import com.google.common.collect.Lists;
+import forge.util.collect.FCollection;
+import forge.util.collect.FCollectionView;
+import org.apache.commons.lang3.tuple.Pair;
+
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map.Entry;
 import java.util.NoSuchElementException;
-
-import org.apache.commons.lang3.tuple.Pair;
-
-import com.google.common.collect.Lists;
-
-import forge.util.collect.FCollection;
-import forge.util.collect.FCollectionView;
 
 
 public final class MapToAmountUtil {
@@ -134,19 +131,14 @@ public final class MapToAmountUtil {
         for (final Entry<T, Integer> entry : map.entrySet()) {
             entries.add(Pair.of(entry.getKey(), entry.getValue()));
         }
-        Collections.sort(entries, new Comparator<Entry<T, Integer>>() {
-            @Override
-            public int compare(final Entry<T, Integer> o1, final Entry<T, Integer> o2) {
-                return o1.getValue().compareTo(o2.getValue());
-            }
-        });
+        entries.sort(Entry.comparingByValue());
         return entries;
     }
 
     private static final MapToAmount<?> EMPTY_MAP = new LinkedHashMapToAmount<>(0);
 
     @SuppressWarnings("unchecked")
-    public static final <T> MapToAmount<T> emptyMap() {
+    public static <T> MapToAmount<T> emptyMap() {
         return (MapToAmount<T>) EMPTY_MAP;
     }
 }

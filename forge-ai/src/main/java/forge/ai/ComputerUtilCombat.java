@@ -17,7 +17,6 @@
  */
 package forge.ai;
 
-import com.google.common.base.Predicate;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
@@ -44,6 +43,7 @@ import forge.game.staticability.StaticAbilityMustAttack;
 import forge.game.trigger.Trigger;
 import forge.game.trigger.TriggerType;
 import forge.game.zone.ZoneType;
+import forge.util.IterableUtil;
 import forge.util.MyRandom;
 import forge.util.TextUtil;
 import forge.util.collect.FCollection;
@@ -79,11 +79,7 @@ public class ComputerUtilCombat {
      */
     public static boolean canAttackNextTurn(final Card attacker) {
         final Iterable<GameEntity> defenders = CombatUtil.getAllPossibleDefenders(attacker.getController());
-        return Iterables.any(defenders, new Predicate<GameEntity>() {
-            @Override public boolean apply(final GameEntity input) {
-                return canAttackNextTurn(attacker, input);
-            }
-        });
+        return IterableUtil.any(defenders, input -> canAttackNextTurn(attacker, input));
     }
 
     /**
@@ -138,12 +134,7 @@ public class ComputerUtilCombat {
      */
     public static int getTotalFirstStrikeBlockPower(final Card attacker, final Player player) {
         List<Card> list = player.getCreaturesInPlay();
-        list = CardLists.filter(list, new Predicate<Card>() {
-            @Override
-            public boolean apply(final Card c) {
-                return (c.hasFirstStrike() || c.hasDoubleStrike()) && CombatUtil.canBlock(attacker, c);
-            }
-        });
+        list = CardLists.filter(list, c -> (c.hasFirstStrike() || c.hasDoubleStrike()) && CombatUtil.canBlock(attacker, c));
 
         return totalFirstStrikeDamageOfBlockers(attacker, list);
     }
@@ -226,7 +217,7 @@ public class ComputerUtilCombat {
         if (attacker.hasKeyword(Keyword.INFECT)) {
             int pd = predictDamageTo(attacked, damage, attacker, true);
             // opponent can always order it so that he gets 0
-            if (pd == 1 && Iterables.any(attacker.getController().getOpponents().getCardsIn(ZoneType.Battlefield), CardPredicates.nameEquals("Vorinclex, Monstrous Raider"))) {
+            if (pd == 1 && attacker.getController().getOpponents().getCardsIn(ZoneType.Battlefield).anyMatch(CardPredicates.nameEquals("Vorinclex, Monstrous Raider"))) {
                 pd = 0;
             }
             poison += pd;
@@ -414,11 +405,11 @@ public class ComputerUtilCombat {
         CardCollectionView otb = ai.getCardsIn(ZoneType.Battlefield);
         // Special cases:
         // AI can't lose in combat in presence of Worship (with creatures)
-        if (Iterables.any(otb, CardPredicates.nameEquals("Worship")) && !ai.getCreaturesInPlay().isEmpty()) {
+        if (otb.anyMatch(CardPredicates.nameEquals("Worship")) && !ai.getCreaturesInPlay().isEmpty()) {
             return false;
         }
         // AI can't lose in combat in presence of Elderscale Wurm (at 7 life or more)
-        if (Iterables.any(otb, CardPredicates.nameEquals("Elderscale Wurm")) && ai.getLife() >= 7) {
+        if (otb.anyMatch(CardPredicates.nameEquals("Elderscale Wurm")) && ai.getLife() >= 7) {
             return false;
         }
 
@@ -431,7 +422,7 @@ public class ComputerUtilCombat {
             final List<Card> blockers = combat.getBlockers(attacker);
 
             if (blockers.isEmpty()) {
-                if (!attacker.getSVar("MustBeBlocked").equals("")) {
+                if (!attacker.getSVar("MustBeBlocked").isEmpty()) {
                     boolean cond = false;
                     String condVal = attacker.getSVar("MustBeBlocked");
                     boolean isAttackingPlayer = combat.getDefenderByAttacker(attacker) instanceof Player;
@@ -500,7 +491,7 @@ public class ComputerUtilCombat {
             final List<Card> blockers = combat.getBlockers(attacker);
 
             if (blockers.isEmpty()) {
-                if (!attacker.getSVar("MustBeBlocked").equals("")) {
+                if (!attacker.getSVar("MustBeBlocked").isEmpty()) {
                     return true;
                 }
             }
@@ -734,7 +725,6 @@ public class ComputerUtilCombat {
         return totalDamageOfBlockers(attacker, blockers) >= getDamageToKill(attacker, false);
     }
 
-    // Will this trigger trigger?
     /**
      * <p>
      * combatTriggerWillTrigger.
@@ -1254,7 +1244,7 @@ public class ComputerUtilCombat {
                 continue;
             }
 
-            sa.setActivatingPlayer(source.getController(), true);
+            sa.setActivatingPlayer(source.getController());
 
             if (sa.hasParam("Cost")) {
                 if (!CostPayment.canPayAdditionalCosts(sa.getPayCosts(), sa, true)) {
@@ -1438,11 +1428,12 @@ public class ComputerUtilCombat {
             if (sa == null) {
                 continue;
             }
-            sa.setActivatingPlayer(source.getController(), true);
 
             if (sa.usesTargeting()) {
                 continue; // targeted pumping not supported
             }
+
+            sa.setActivatingPlayer(source.getController());
 
             // DealDamage triggers
             if (ApiType.DealDamage.equals(sa.getApi())) {
@@ -2549,10 +2540,10 @@ public class ComputerUtilCombat {
             GameEntity def = combat.getDefenderByAttacker(sa.getHostCard());
             // 1. If the card that spawned the attacker was sent at a card, attack the same. Consider improving.
             if (def instanceof Card && Iterables.contains(defenders, def)) {
-                if (((Card)def).isPlaneswalker()) {
+                if (((Card) def).isPlaneswalker()) {
                     return def;
                 }
-                if (((Card)def).isBattle()) {
+                if (((Card) def).isBattle()) {
                     return def;
                 }
             }

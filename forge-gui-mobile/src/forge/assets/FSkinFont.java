@@ -1,8 +1,9 @@
 package forge.assets;
 
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.HashMap;
 
 import com.badlogic.gdx.Gdx;
@@ -10,12 +11,9 @@ import com.badlogic.gdx.files.FileHandle;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.Pixmap;
 import com.badlogic.gdx.graphics.Texture;
-import com.badlogic.gdx.graphics.g2d.BitmapFont;
+import com.badlogic.gdx.graphics.g2d.*;
 import com.badlogic.gdx.graphics.g2d.BitmapFont.BitmapFontData;
 import com.badlogic.gdx.graphics.g2d.BitmapFont.Glyph;
-import com.badlogic.gdx.graphics.g2d.PixmapPacker;
-import com.badlogic.gdx.graphics.g2d.SpriteBatch;
-import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.graphics.g2d.freetype.FreeTypeFontGenerator;
 import com.badlogic.gdx.graphics.g2d.freetype.FreeTypeFontGenerator.FreeTypeFontParameter;
 import com.badlogic.gdx.graphics.glutils.PixmapTextureData;
@@ -322,7 +320,7 @@ public class FSkinFont {
         return font.getLineHeight();
     }
 
-    public void draw(SpriteBatch batch, String text, Color color, float x, float y, float w, boolean wrap, int horzAlignment) {
+    public void draw(Batch batch, String text, Color color, float x, float y, float w, boolean wrap, int horzAlignment) {
         updateScale();
         font.setColor(color);
         font.draw(batch, text, x, y, w, horzAlignment, wrap);
@@ -370,7 +368,7 @@ public class FSkinFont {
         String[] translationFilePaths = { ForgeConstants.LANG_DIR + "cardnames-" + langCode + ".txt",
                 ForgeConstants.LANG_DIR + langCode + ".properties" };
         for (String translationFilePath : translationFilePaths) {
-            try (LineReader translationFile = new LineReader(new FileInputStream(translationFilePath),
+            try (LineReader translationFile = new LineReader(Files.newInputStream(Paths.get(translationFilePath)),
                     StandardCharsets.UTF_8)) {
                 for (String fileLine : translationFile.readLines()) {
                     final int stringLength = fileLine.length();

@@ -4,18 +4,16 @@ import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
-import com.google.common.base.Function;
-import com.google.common.base.Predicate;
-import com.google.common.base.Predicates;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 
@@ -83,11 +81,12 @@ public class AdvancedSearch {
             protected Set<String> getItemValues(PaperCard input) {
                 Set<String> names = new HashSet<>();
                 names.add(input.getRules().getOracleText());
-                names.add(CardTranslation.getTranslatedOracle(input.getName()));
+                names.add(CardTranslation.getTranslatedOracle(input));
                 CardSplitType cardSplitType = input.getRules().getSplitType();
                 if (cardSplitType != CardSplitType.None && cardSplitType != CardSplitType.Split) {
                     if (input.getRules().getOtherPart() != null) {
                         names.add(input.getRules().getOtherPart().getOracleText());
+                        //Doesn't support a combination of functional variant + split card, but none of those exist yet.
                         names.add(CardTranslation.getTranslatedOracle(input.getRules().getOtherPart().getName()));
                     }
                 }
@@ -116,7 +115,7 @@ public class AdvancedSearch {
                 return Keyword.getKeywordSet(input);
             }
         }),
-        CARD_SET("lblSet", PaperCard.class, FilterOperator.SINGLE_LIST_OPS, new CustomListEvaluator<PaperCard, CardEdition>(FModel.getMagicDb().getSortedEditions(), CardEdition.FN_GET_CODE) {
+        CARD_SET("lblSet", PaperCard.class, FilterOperator.SINGLE_LIST_OPS, new CustomListEvaluator<PaperCard, CardEdition>(FModel.getMagicDb().getSortedEditions(), CardEdition::getCode) {
             @Override
             protected CardEdition getItemValue(PaperCard input) {
                 return FModel.getMagicDb().getCardEdition(input.getEdition());
@@ -285,7 +284,7 @@ public class AdvancedSearch {
                 return input.getRules().getManaCost().toString();
             }
         }),
-        CARD_RARITY("lblRarity", PaperCard.class, FilterOperator.SINGLE_LIST_OPS, new CustomListEvaluator<PaperCard, CardRarity>(Arrays.asList(CardRarity.FILTER_OPTIONS), CardRarity.FN_GET_LONG_NAME, CardRarity.FN_GET_LONG_NAME) {
+        CARD_RARITY("lblRarity", PaperCard.class, FilterOperator.SINGLE_LIST_OPS, new CustomListEvaluator<PaperCard, CardRarity>(Arrays.asList(CardRarity.FILTER_OPTIONS), CardRarity::getLongName, CardRarity::getLongName) {
             @Override
             protected CardRarity getItemValue(PaperCard input) {
                 return input.getRarity();
@@ -297,7 +296,7 @@ public class AdvancedSearch {
                 List<PaperCard> cards = FModel.getMagicDb().getCommonCards().getAllCards(input.getName());
                 if (cards.size() <= 1) { return true; }
 
-                Collections.sort(cards, FModel.getMagicDb().getEditions().CARD_EDITION_COMPARATOR);
+                cards.sort(FModel.getMagicDb().getEditions().CARD_EDITION_COMPARATOR);
                 return cards.get(0) == input;
             }
         }),
@@ -335,7 +334,7 @@ public class AdvancedSearch {
                 return Keyword.getKeywordSet((PaperCard)input);
             }
         }),
-        INVITEM_SET("lblSet", InventoryItem.class, FilterOperator.SINGLE_LIST_OPS, new CustomListEvaluator<InventoryItem, CardEdition>(FModel.getMagicDb().getSortedEditions(), CardEdition.FN_GET_CODE) {
+        INVITEM_SET("lblSet", InventoryItem.class, FilterOperator.SINGLE_LIST_OPS, new CustomListEvaluator<InventoryItem, CardEdition>(FModel.getMagicDb().getSortedEditions(), CardEdition::getCode) {
             @Override
             protected CardEdition getItemValue(InventoryItem input) {
                 if (input instanceof PaperCard) {
@@ -528,11 +527,11 @@ public class AdvancedSearch {
                 List<PaperCard> cards = FModel.getMagicDb().getCommonCards().getAllCards(input.getName());
                 if (cards.size() <= 1) { return true; }
 
-                Collections.sort(cards, FModel.getMagicDb().getEditions().CARD_EDITION_COMPARATOR);
+                cards.sort(FModel.getMagicDb().getEditions().CARD_EDITION_COMPARATOR);
                 return cards.get(0) == input;
             }
         }),
-        INVITEM_RARITY("lblRarity", InventoryItem.class, FilterOperator.SINGLE_LIST_OPS, new CustomListEvaluator<InventoryItem, CardRarity>(Arrays.asList(CardRarity.FILTER_OPTIONS), CardRarity.FN_GET_LONG_NAME, CardRarity.FN_GET_LONG_NAME) {
+        INVITEM_RARITY("lblRarity", InventoryItem.class, FilterOperator.SINGLE_LIST_OPS, new CustomListEvaluator<InventoryItem, CardRarity>(Arrays.asList(CardRarity.FILTER_OPTIONS), CardRarity::getLongName, CardRarity::getLongName) {
             @Override
             protected CardRarity getItemValue(InventoryItem input) {
                 if (!(input instanceof PaperCard)) {
@@ -1103,23 +1102,13 @@ public class AdvancedSearch {
             String caption = getCaption(values, option, operator);
 
             final OperatorEvaluator<V> evaluator = (OperatorEvaluator<V>) operator.evaluator;
-            Predicate<T> predicate = new Predicate<T>() {
-                @Override
-                public boolean apply(T input) {
-                    return evaluator.apply(getItemValue(input), values);
-                }
-            };
+            Predicate<T> predicate = input -> evaluator.apply(getItemValue(input), values);
 
             final FilterOperator[][] manyValueOperators = { FilterOperator.MULTI_LIST_OPS,
                     FilterOperator.COMBINATION_OPS, FilterOperator.COLLECTION_OPS, FilterOperator.STRINGS_OPS };
             for (FilterOperator[] oper : manyValueOperators) {
                 if (option.operatorOptions == oper) {
-                    predicate = new Predicate<T>() {
-                        @Override
-                        public boolean apply(T input) {
-                            return evaluator.apply(getItemValues(input), values);
-                        }
-                    };
+                    predicate = input -> evaluator.apply(getItemValues(input), values);
                     break;
                 }
             }
@@ -1340,7 +1329,7 @@ public class AdvancedSearch {
 
     private static abstract class ColorEvaluator<T extends InventoryItem> extends CustomListEvaluator<T, MagicColor.Color> {
         public ColorEvaluator() {
-            super(Arrays.asList(MagicColor.Color.values()), MagicColor.FN_GET_SYMBOL);
+            super(Arrays.asList(MagicColor.Color.values()), MagicColor.Color::getSymbol);
         }
 
         @Override
@@ -1549,7 +1538,7 @@ public class AdvancedSearch {
 
         public Predicate<T> getPredicate() {
             if (isEmpty()) {
-                return Predicates.alwaysTrue();
+                return x -> true;
             }
             return getPredicatePiece(new ExpressionIterator());
         }
@@ -1585,17 +1574,17 @@ public class AdvancedSearch {
                     predPiece = ((AdvancedSearch.Filter<T>) piece).getPredicate();
                 }
                 if (applyNot) {
-                    predPiece = Predicates.not(predPiece);
+                    predPiece = predPiece.negate();
                     applyNot = false;
                 }
                 if (pred == null) {
                     pred = predPiece;
                 }
                 else if (operator == Operator.AND) {
-                    pred = Predicates.and(pred, predPiece);
+                    pred = pred.and(predPiece);
                 }
                 else if (operator == Operator.OR) {
-                    pred = Predicates.or(pred, predPiece);
+                    pred = pred.or(predPiece);
                 }
                 operator = null;
             }
@@ -1615,12 +1604,7 @@ public class AdvancedSearch {
         @SuppressWarnings("serial")
         public void addFilterControl(final IFilterControl<T> control) {
             control.getBtnFilter().setText(EMPTY_FILTER_TEXT);
-            control.getBtnFilter().setCommand(new UiCommand() {
-                @Override
-                public void run() {
-                    editFilterControl(control, null);
-                }
-            });
+            control.getBtnFilter().setCommand((UiCommand) () -> editFilterControl(control, null));
             controls.add(control);
         }
 
@@ -1635,35 +1619,29 @@ public class AdvancedSearch {
         }
 
         public void editFilterControl(final IFilterControl<T> control, final Runnable onChange) {
-            FThreads.invokeInBackgroundThread(new Runnable() {
-                @Override
-                public void run() {
-                    final Filter<T> filter = getFilter(control.getGenericType(), control.getFilter(), onChange == null); //reselect option if no change handler passed
-                    if (control.getFilter() != filter) {
-                        FThreads.invokeInEdtLater(new Runnable() {
-                            @Override
-                            public void run() {
-                                control.setFilter(filter);
-                                if (filter != null) {
-                                    control.getBtnFilter().setText(GuiBase.getInterface().encodeSymbols(filter.toString(), false));
+            FThreads.invokeInBackgroundThread(() -> {
+                final Filter<T> filter = getFilter(control.getGenericType(), control.getFilter(), onChange == null); //reselect option if no change handler passed
+                if (control.getFilter() != filter) {
+                    FThreads.invokeInEdtLater(() -> {
+                        control.setFilter(filter);
+                        if (filter != null) {
+                            control.getBtnFilter().setText(GuiBase.getInterface().encodeSymbols(filter.toString(), false));
 
-                                    if (filter.getOption() == FilterOption.CARD_KEYWORDS) {
-                                        //the first time the user selects keywords, preload keywords for all cards
-                                        Runnable preloadTask = Keyword.getPreloadTask();
-                                        if (preloadTask != null) {
-                                            GuiBase.getInterface().runBackgroundTask(Localizer.getInstance().getMessage("lblLoadingKeywords"), preloadTask);
-                                        }
-                                    }
-                                }
-                                else {
-                                    control.getBtnFilter().setText(EMPTY_FILTER_TEXT);
-                                }
-                                if (onChange != null) {
-                                    onChange.run();
+                            if (filter.getOption() == FilterOption.CARD_KEYWORDS) {
+                                //the first time the user selects keywords, preload keywords for all cards
+                                Runnable preloadTask = Keyword.getPreloadTask();
+                                if (preloadTask != null) {
+                                    GuiBase.getInterface().runBackgroundTask(Localizer.getInstance().getMessage("lblLoadingKeywords"), preloadTask);
                                 }
                             }
-                        });
-                    }
+                        }
+                        else {
+                            control.getBtnFilter().setText(EMPTY_FILTER_TEXT);
+                        }
+                        if (onChange != null) {
+                            onChange.run();
+                        }
+                    });
                 }
             });
         }

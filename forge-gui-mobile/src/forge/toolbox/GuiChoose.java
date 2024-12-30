@@ -3,15 +3,13 @@ package forge.toolbox;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.function.Function;
 
+import com.google.common.collect.Iterables;
 import forge.Forge;
 import org.apache.commons.lang3.StringUtils;
-
-import com.google.common.base.Function;
-import com.google.common.collect.Iterables;
 
 import forge.game.card.CardView;
 import forge.util.Callback;
@@ -340,7 +338,7 @@ public class GuiChoose {
     // If comparer is NULL, T has to be comparable. Otherwise you'll get an exception from inside the Arrays.sort() routine
     public static <T> void sortedGetChoices(final String message, final int min, final int max, final List<T> choices, Comparator<T> comparer, final Callback<List<T>> callback) {
         // You may create a copy of source list if callers expect the collection to be unchanged
-        Collections.sort(choices, comparer);
+        choices.sort(comparer);
         getChoices(message, min, max, choices, callback);
     }
 }

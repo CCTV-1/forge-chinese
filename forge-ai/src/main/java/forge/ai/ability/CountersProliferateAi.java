@@ -1,23 +1,17 @@
 package forge.ai.ability;
 
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
-
-import com.google.common.base.Predicate;
-import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
-
-import forge.ai.AiProps;
-import forge.ai.ComputerUtil;
-import forge.ai.ComputerUtilCard;
-import forge.ai.PlayerControllerAi;
-import forge.ai.SpellAbilityAi;
+import forge.ai.*;
 import forge.game.GameEntity;
 import forge.game.card.*;
 import forge.game.player.Player;
 import forge.game.spellability.SpellAbility;
 import forge.game.zone.ZoneType;
+import forge.util.IterableUtil;
+
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
 
 public class CountersProliferateAi extends SpellAbilityAi {
 
@@ -31,25 +25,22 @@ public class CountersProliferateAi extends SpellAbilityAi {
             if (p.getCounters(CounterEnumType.EXPERIENCE) + p.getCounters(CounterEnumType.ENERGY) >= 1) {
                 allyExpOrEnergy = true;
             }
-            cperms.addAll(CardLists.filter(p.getCardsIn(ZoneType.Battlefield), new Predicate<Card>() {
-                @Override
-                public boolean apply(final Card crd) {
-                    if (!crd.hasCounters()) {
-                        return false;
-                    }
-
-                    if (crd.isPlaneswalker()) {
-                        return true;
-                    }
-
-                    // iterate only over existing counters
-                    for (final Map.Entry<CounterType, Integer> e : crd.getCounters().entrySet()) {
-                        if (e.getValue() >= 1 && !ComputerUtil.isNegativeCounter(e.getKey(), crd)) {
-                            return true;
-                        }
-                    }
+            cperms.addAll(CardLists.filter(p.getCardsIn(ZoneType.Battlefield), crd -> {
+                if (!crd.hasCounters()) {
                     return false;
                 }
+
+                if (crd.isPlaneswalker()) {
+                    return true;
+                }
+
+                // iterate only over existing counters
+                for (final Map.Entry<CounterType, Integer> e : crd.getCounters().entrySet()) {
+                    if (e.getValue() >= 1 && !ComputerUtil.isNegativeCounter(e.getKey(), crd)) {
+                        return true;
+                    }
+                }
+                return false;
             }));
         }
 
@@ -58,25 +49,22 @@ public class CountersProliferateAi extends SpellAbilityAi {
 
         for (final Player o : ai.getOpponents()) {
             opponentPoison |= o.getPoisonCounters() > 0 && o.canReceiveCounters(CounterEnumType.POISON);
-            hperms.addAll(CardLists.filter(o.getCardsIn(ZoneType.Battlefield), new Predicate<Card>() {
-                @Override
-                public boolean apply(final Card crd) {
-                    if (!crd.hasCounters()) {
-                        return false;
-                    }
-
-                    if (crd.isPlaneswalker()) {
-                        return false;
-                    }
-
-                    // iterate only over existing counters
-                    for (final Map.Entry<CounterType, Integer> e : crd.getCounters().entrySet()) {
-                        if (e.getValue() >= 1 && ComputerUtil.isNegativeCounter(e.getKey(), crd)) {
-                            return true;
-                        }
-                    }
+            hperms.addAll(CardLists.filter(o.getCardsIn(ZoneType.Battlefield), crd -> {
+                if (!crd.hasCounters()) {
                     return false;
                 }
+
+                if (crd.isPlaneswalker()) {
+                    return false;
+                }
+
+                // iterate only over existing counters
+                for (final Map.Entry<CounterType, Integer> e : crd.getCounters().entrySet()) {
+                    if (e.getValue() >= 1 && ComputerUtil.isNegativeCounter(e.getKey(), crd)) {
+                        return true;
+                    }
+                }
+                return false;
             }));
         }
 
@@ -117,7 +105,7 @@ public class CountersProliferateAi extends SpellAbilityAi {
 
         boolean aggroAI = (((PlayerControllerAi) ai.getController()).getAi()).getBooleanProperty(AiProps.PLAY_AGGRO);
         // because countertype can't be chosen anymore, only look for poison counters
-        for (final Player p : Iterables.filter(options, Player.class)) {
+        for (final Player p : IterableUtil.filter(options, Player.class)) {
             if (p.isOpponentOf(ai)) {
                 if (p.getCounters(poison) > 0 && p.canReceiveCounters(poison)) {
                     return (T)p;
@@ -130,7 +118,7 @@ public class CountersProliferateAi extends SpellAbilityAi {
             }
         }
 
-        for (final Card c : Iterables.filter(options, Card.class)) {
+        for (final Card c : IterableUtil.filter(options, Card.class)) {
             // AI planeswalker always, opponent planeswalkers never
             if (c.isPlaneswalker()) {
                 if (c.getController().isOpponentOf(ai)) {

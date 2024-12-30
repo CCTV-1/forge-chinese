@@ -17,18 +17,17 @@
  */
 package forge.ai;
 
+import forge.LobbyPlayer;
+import forge.util.Aggregates;
+import forge.util.FileUtil;
+import forge.util.TextUtil;
+import org.apache.commons.lang3.ArrayUtils;
+
 import java.io.File;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-
-import org.apache.commons.lang3.ArrayUtils;
-
-import forge.LobbyPlayer;
-import forge.util.Aggregates;
-import forge.util.FileUtil;
-import forge.util.TextUtil;
 
 /**
  * Holds default AI personality profile values in an enum.
@@ -93,7 +92,7 @@ public class AiProfileUtil {
      * Load a single profile.
      * @param profileName a profile to load.
      */
-    private static final Map<AiProps, String> loadProfile(final String profileName) {
+    private static Map<AiProps, String> loadProfile(final String profileName) {
         Map<AiProps, String> profileMap = new HashMap<>();
 
         List<String> lines = FileUtil.readFile(buildFileName(profileName));

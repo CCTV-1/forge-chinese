@@ -17,10 +17,7 @@
  */
 package forge.game.cost;
 
-import java.util.List;
-
 import com.google.common.collect.Sets;
-
 import forge.game.Game;
 import forge.game.GameEntityCounterTable;
 import forge.game.ability.AbilityKey;
@@ -30,6 +27,8 @@ import forge.game.replacement.ReplacementEffect;
 import forge.game.replacement.ReplacementType;
 import forge.game.spellability.SpellAbility;
 import forge.game.zone.ZoneType;
+
+import java.util.List;
 
 /**
  * The Class CostPutCounter.
@@ -197,7 +196,8 @@ public class CostPutCounter extends CostPartWithList {
     protected Card doPayment(Player payer, SpellAbility ability, Card targetCard, final boolean effect) {
         final int i = getAbilityAmount(ability);
         if (isETBReplacement(ability, effect)) {
-            targetCard.addEtbCounter(getCounter(), i, payer);
+            GameEntityCounterTable etbTable = (GameEntityCounterTable) ability.getReplacingObject(AbilityKey.CounterTable);
+            etbTable.put(payer, targetCard, getCounter(), i);
         } else {
             targetCard.addCounter(getCounter(), i, payer, counterTable);
         }

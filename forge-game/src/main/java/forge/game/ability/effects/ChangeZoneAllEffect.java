@@ -4,9 +4,9 @@ import java.util.List;
 import java.util.Map;
 
 import com.google.common.collect.Iterables;
-
 import forge.game.Game;
 import forge.game.GameActionUtil;
+import forge.game.GameEntityCounterTable;
 import forge.game.ability.AbilityKey;
 import forge.game.ability.AbilityUtils;
 import forge.game.ability.SpellAbilityEffect;
@@ -61,7 +61,7 @@ public class ChangeZoneAllEffect extends SpellAbilityEffect {
             if (sa.hasParam("OptionQuestion")) {
                 message = TextUtil.fastReplace(sa.getParam("OptionQuestion"), "TARGETS", targets);
             } else {
-                message = Localizer.getInstance().getMessage("lblMoveTargetFromOriginToDestination", targets, Lang.joinHomogenous(origin, ZoneType.Accessors.GET_TRANSLATED_NAME), destination.getTranslatedName());
+                message = Localizer.getInstance().getMessage("lblMoveTargetFromOriginToDestination", targets, Lang.joinHomogenous(origin, ZoneType::getTranslatedName), destination.getTranslatedName());
             }
 
             if (!sa.getActivatingPlayer().getController().confirmAction(sa, null, message, null)) {
@@ -84,22 +84,20 @@ public class ChangeZoneAllEffect extends SpellAbilityEffect {
         final String imprint = sa.getParam("Imprint");
         final boolean random = sa.hasParam("RandomOrder");
         final boolean remLKI = sa.hasParam("RememberLKI");
+        final boolean movingToDeck = destination.isDeck();
 
         final int libraryPos = sa.hasParam("LibraryPosition") ? Integer.parseInt(sa.getParam("LibraryPosition")) : 0;
 
-        if (!random && !((destination == ZoneType.Library || destination == ZoneType.PlanarDeck) && sa.hasParam("Shuffle"))) {
-            if ((destination == ZoneType.Library || destination == ZoneType.PlanarDeck) && cards.size() >= 2) {
+        if (!random && !sa.hasParam("Shuffle")) {
+            if (movingToDeck && cards.size() >= 2) {
                 Player p = AbilityUtils.getDefinedPlayers(source, sa.getParam("DefinedPlayer"), sa).get(0);
                 cards = (CardCollection) p.getController().orderMoveToZoneList(cards, destination, sa);
-                //the last card in this list will be the closest to the top, but we want the first card to be closest.
-                //so reverse it here before moving them to the library.
-                java.util.Collections.reverse(cards);
             } else {
                 cards = (CardCollection) GameActionUtil.orderCardsByTheirOwners(game, cards, destination, sa);
             }
         }
 
-        if (destination.equals(ZoneType.Library) && random) {
+        if (movingToDeck && random) {
             CardLists.shuffle(cards);
         }
 
@@ -144,7 +142,9 @@ public class ChangeZoneAllEffect extends SpellAbilityEffect {
                 if (sa.hasParam("WithCountersType")) {
                     CounterType cType = CounterType.getType(sa.getParam("WithCountersType"));
                     int cAmount = AbilityUtils.calculateAmount(c, sa.getParamOrDefault("WithCountersAmount", "1"), sa);
-                    c.addEtbCounter(cType, cAmount,sa.getActivatingPlayer());
+                    GameEntityCounterTable table = new GameEntityCounterTable();
+                    table.put(sa.getActivatingPlayer(), c, cType, cAmount);
+                    moveParams.put(AbilityKey.CounterTable, table);
                 }
             }
             Card movedCard = null;
@@ -205,6 +205,7 @@ public class ChangeZoneAllEffect extends SpellAbilityEffect {
         // CR 701.20d If an effect would cause a player to shuffle a set of objects into a library,
         // that library is shuffled even if there are no objects in that set. 
         if (sa.hasParam("Shuffle")) {
+            //TODO: If destination zone is some other kind of deck like a planar deck, shuffle that instead.
             for (Player p : tgtPlayers) {
                 p.shuffle(sa);
             }

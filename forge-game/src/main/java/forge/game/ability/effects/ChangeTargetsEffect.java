@@ -2,12 +2,11 @@ package forge.game.ability.effects;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Predicate;
 
+import com.google.common.collect.Iterables;
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.Pair;
-
-import com.google.common.base.Predicate;
-import com.google.common.collect.Iterables;
 
 import forge.game.GameEntity;
 import forge.game.GameObject;
@@ -99,12 +98,7 @@ public class ChangeTargetsEffect extends SpellAbilityEffect {
                             int div = changingTgtSA.getTotalDividedValue();
                             List<GameEntity> candidates = changingTgtSA.getTargetRestrictions().getAllCandidates(changingTgtSA, true);
                             if (sa.hasParam("RandomTargetRestriction")) {
-                                candidates.removeIf(new java.util.function.Predicate<GameEntity>() {
-                                    @Override
-                                    public boolean test(GameEntity c) {
-                                        return !c.isValid(sa.getParam("RandomTargetRestriction").split(","), activator, sa.getHostCard(), sa);
-                                    }
-                                });
+                                candidates.removeIf(c -> !c.isValid(sa.getParam("RandomTargetRestriction").split(","), activator, sa.getHostCard(), sa));
                             }
                             // CR 115.7a If a target can't be changed to another legal target, the original target is unchanged
                             if (candidates.isEmpty()) {

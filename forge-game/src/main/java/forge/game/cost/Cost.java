@@ -35,7 +35,9 @@ import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
 
 import java.io.Serializable;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
 /**
  * <p>
@@ -118,12 +120,7 @@ public class Cost implements Serializable {
         // Things that are pretty much happen at the end (Untap) 16+
         // Things that NEED to happen last 100+
 
-        Collections.sort(this.costParts, new Comparator<CostPart>() {
-            @Override
-            public int compare(CostPart o1, CostPart o2) {
-                return ObjectUtils.compare(o1.paymentOrder(), o2.paymentOrder());
-            }
-        });
+        this.costParts.sort((o1, o2) -> ObjectUtils.compare(o1.paymentOrder(), o2.paymentOrder()));
     }
 
     /**
@@ -259,8 +256,8 @@ public class Cost implements Serializable {
             }
         }
 
-        if (parsedMana == null && (manaParts.length() > 0 || !xMin.equals(""))) {
-            parsedMana = new CostPartMana(new ManaCost(new ManaCostParser(manaParts.toString())), xMin.equals("") ? null : xMin);
+        if (parsedMana == null && (manaParts.length() > 0 || !xMin.isEmpty())) {
+            parsedMana = new CostPartMana(new ManaCost(new ManaCostParser(manaParts.toString())), xMin.isEmpty() ? null : xMin);
         }
         if (parsedMana != null) {
             costParts.add(parsedMana);

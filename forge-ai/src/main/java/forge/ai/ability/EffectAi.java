@@ -1,7 +1,5 @@
 package forge.ai.ability;
 
-import com.google.common.base.Predicate;
-import com.google.common.base.Predicates;
 import com.google.common.collect.Iterables;
 import forge.ai.*;
 import forge.game.CardTraitPredicates;
@@ -11,9 +9,9 @@ import forge.game.ability.AbilityKey;
 import forge.game.ability.AbilityUtils;
 import forge.game.ability.ApiType;
 import forge.game.card.*;
-import forge.game.card.CardPredicates.Presets;
 import forge.game.combat.Combat;
 import forge.game.combat.CombatUtil;
+import forge.game.cost.Cost;
 import forge.game.keyword.Keyword;
 import forge.game.phase.PhaseHandler;
 import forge.game.phase.PhaseType;
@@ -29,7 +27,7 @@ import forge.game.zone.MagicStack;
 import forge.game.zone.ZoneType;
 import forge.util.MyRandom;
 import forge.util.TextUtil;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import forge.util.collect.FCollectionView;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -59,8 +57,8 @@ public class EffectAi extends SpellAbilityAi {
                 for (Player opp : ai.getOpponents()) {
                     boolean worthHolding = false;
                     CardCollectionView oppCreatsLands = CardLists.filter(opp.getCardsIn(ZoneType.Battlefield),
-                        Predicates.or(CardPredicates.Presets.LANDS, CardPredicates.Presets.CREATURES));
-                    CardCollectionView oppCreatsLandsTapped = CardLists.filter(oppCreatsLands, CardPredicates.Presets.TAPPED);
+                            CardPredicates.LANDS.or(CardPredicates.CREATURES));
+                    CardCollectionView oppCreatsLandsTapped = CardLists.filter(oppCreatsLands, CardPredicates.TAPPED);
 
                     if (oppCreatsLandsTapped.size() >= 3 || oppCreatsLands.size() == oppCreatsLandsTapped.size()) {
                         worthHolding = true;
@@ -86,7 +84,7 @@ public class EffectAi extends SpellAbilityAi {
                 Player opp = ai.getStrongestOpponent();
                 List<Card> possibleAttackers = ai.getCreaturesInPlay();
                 List<Card> possibleBlockers = opp.getCreaturesInPlay();
-                possibleBlockers = CardLists.filter(possibleBlockers, Presets.UNTAPPED);
+                possibleBlockers = CardLists.filter(possibleBlockers, CardPredicates.UNTAPPED);
                 final Combat combat = game.getCombat();
                 int oppLife = opp.getLife();
                 int potentialDmg = 0;
@@ -173,22 +171,12 @@ public class EffectAi extends SpellAbilityAi {
                     List<Card> human = opp.getCreaturesInPlay();
 
                     // only count creatures that can attack or block
-                    comp = CardLists.filter(comp, new Predicate<Card>() {
-                        @Override
-                        public boolean apply(final Card c) {
-                            return CombatUtil.canAttack(c, opp);
-                        }
-                    });
+                    comp = CardLists.filter(comp, c -> CombatUtil.canAttack(c, opp));
                     if (comp.size() < 2) {
                         continue;
                     }
                     final List<Card> attackers = comp;
-                    human = CardLists.filter(human, new Predicate<Card>() {
-                        @Override
-                        public boolean apply(final Card c) {
-                            return CombatUtil.canBlockAtLeastOne(c, attackers);
-                        }
-                    });
+                    human = CardLists.filter(human, c -> CombatUtil.canBlockAtLeastOne(c, attackers));
                     if (human.isEmpty()) {
                         continue;
                     }
@@ -345,24 +333,20 @@ public class EffectAi extends SpellAbilityAi {
             } else if (logic.equals("CantRegenerate")) {
                 if (sa.usesTargeting()) {
                     CardCollection list = CardLists.getTargetableCards(ai.getOpponents().getCardsIn(ZoneType.Battlefield), sa);
-                    list = CardLists.filter(list, CardPredicates.Presets.CAN_BE_DESTROYED, new Predicate<Card>() {
-
-                        @Override
-                        public boolean apply(@Nullable Card input) {
-                            Map<AbilityKey, Object> runParams = AbilityKey.mapFromAffected(input);
-                            runParams.put(AbilityKey.Regeneration, true);
-                            List<ReplacementEffect> repDestoryList = game.getReplacementHandler().getReplacementList(ReplacementType.Destroy, runParams, ReplacementLayer.Other);
-                            // no Destroy Replacement, or one non-Regeneration one like Totem-Armor
-                            if (repDestoryList.isEmpty() || Iterables.any(repDestoryList, Predicates.not(CardTraitPredicates.hasParam("Regeneration")))) {
-                                return false;
-                            }
-
-                            if (cantRegenerateCheckCombat(input) || cantRegenerateCheckStack(input)) {
-                                return true;
-                            }
-
+                    list = CardLists.filter(list, CardPredicates.CAN_BE_DESTROYED, input -> {
+                        Map<AbilityKey, Object> runParams = AbilityKey.mapFromAffected(input);
+                        runParams.put(AbilityKey.Regeneration, true);
+                        List<ReplacementEffect> repDestroyList = game.getReplacementHandler().getReplacementList(ReplacementType.Destroy, runParams, ReplacementLayer.Other);
+                        // no Destroy Replacement, or one non-Regeneration one like Totem-Armor
+                        if (repDestroyList.isEmpty() || repDestroyList.stream().anyMatch(CardTraitPredicates.hasParam("Regeneration").negate())) {
                             return false;
                         }
+
+                        if (cantRegenerateCheckCombat(input) || cantRegenerateCheckStack(input)) {
+                            return true;
+                        }
+
+                        return false;
                     });
 
                     if (list.isEmpty()) {
@@ -383,9 +367,9 @@ public class EffectAi extends SpellAbilityAi {
 
                     Map<AbilityKey, Object> runParams = AbilityKey.mapFromAffected(sa.getHostCard());
                     runParams.put(AbilityKey.Regeneration, true);
-                    List<ReplacementEffect> repDestoryList = game.getReplacementHandler().getReplacementList(ReplacementType.Destroy, runParams, ReplacementLayer.Other);
+                    List<ReplacementEffect> repDestroyList = game.getReplacementHandler().getReplacementList(ReplacementType.Destroy, runParams, ReplacementLayer.Other);
                     // no Destroy Replacement, or one non-Regeneration one like Totem-Armor
-                    if (repDestoryList.isEmpty() || Iterables.any(repDestoryList, Predicates.not(CardTraitPredicates.hasParam("Regeneration")))) {
+                    if (repDestroyList.isEmpty() || repDestroyList.stream().anyMatch(CardTraitPredicates.hasParam("Regeneration").negate())) {
                         return false;
                     }
 
@@ -443,7 +427,7 @@ public class EffectAi extends SpellAbilityAi {
         if (sa.usesTargeting() && !sa.getTargetRestrictions().canTgtPlayer()) {
             // try to target the opponent's best targetable permanent, if able
             CardCollection oppPerms = CardLists.getValidCards(aiPlayer.getOpponents().getCardsIn(sa.getTargetRestrictions().getZone()), sa.getTargetRestrictions().getValidTgts(), aiPlayer, sa.getHostCard(), sa);
-            oppPerms = CardLists.filter(oppPerms, card -> sa.canTarget(card));
+            oppPerms = CardLists.filter(oppPerms, sa::canTarget);
             if (!oppPerms.isEmpty()) {
                 sa.resetTargets();
                 sa.getTargets().add(ComputerUtilCard.getBestAI(oppPerms));
@@ -453,7 +437,7 @@ public class EffectAi extends SpellAbilityAi {
             if (mandatory) {
                 // try to target the AI's worst targetable permanent, if able
                 CardCollection aiPerms = CardLists.getValidCards(aiPlayer.getCardsIn(sa.getTargetRestrictions().getZone()), sa.getTargetRestrictions().getValidTgts(), aiPlayer, sa.getHostCard(), sa);
-                aiPerms = CardLists.filter(aiPerms, card -> sa.canTarget(card));
+                aiPerms = CardLists.filter(aiPerms, sa::canTarget);
                 if (!aiPerms.isEmpty()) {
                     sa.resetTargets();
                     sa.getTargets().add(ComputerUtilCard.getWorstAI(aiPerms));
@@ -654,5 +638,20 @@ public class EffectAi extends SpellAbilityAi {
         }
 
         return false;
+    }
+
+    @Override
+    public boolean willPayUnlessCost(SpellAbility sa, Player payer, Cost cost, boolean alreadyPaid, FCollectionView<Player> payers) {
+        final String aiLogic = sa.getParam("UnlessAI");
+        if ("WillAttack".equals(aiLogic)) {
+            // TODO use AiController::getPredictedCombat
+            AiAttackController aiAtk = new AiAttackController(payer);
+            Combat combat = new Combat(payer);
+            aiAtk.declareAttackers(combat);
+            if (combat.getAttackers().isEmpty()) {
+                return false;
+            }
+        }
+        return super.willPayUnlessCost(sa, payer, cost, alreadyPaid, payers);
     }
 }

@@ -1,12 +1,5 @@
 package forge.gamemodes.net;
 
-import java.lang.reflect.Method;
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
-
-import com.google.common.base.Function;
-
 import forge.deck.CardPool;
 import forge.game.GameEntityView;
 import forge.game.GameView;
@@ -24,6 +17,12 @@ import forge.player.PlayerZoneUpdates;
 import forge.trackable.TrackableCollection;
 import forge.util.ITriggerEvent;
 import forge.util.ReflectionUtil;
+
+import java.lang.reflect.Method;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
 
 /**
  * The methods that can be sent through this protocol.
@@ -138,7 +137,7 @@ public enum ProtocolMethod {
             }
             return candidate;
         } catch (final NoSuchMethodException | SecurityException e) {
-            System.err.println(String.format("Warning: class contains no accessible method named %s", name()));
+            System.err.printf("Warning: class contains no accessible method named %s%n", name());
             return getMethodNoArgs();
         }
     }
@@ -147,7 +146,7 @@ public enum ProtocolMethod {
         try {
             return mode.toInvoke.getMethod(name(), (Class<?>[]) null);
         } catch (final NoSuchMethodException | SecurityException e) {
-            System.err.println(String.format("Warning: class contains no accessible arg-less method named %s", name()));
+            System.err.printf("Warning: class contains no accessible arg-less method named %s%n", name());
             return null;
         }
     }
@@ -168,7 +167,7 @@ public enum ProtocolMethod {
                 final Class<?> type = this.args[iArg];
                 if (!ReflectionUtil.isInstance(arg, type)) {
                     //throw new InternalError(String.format("Protocol method %s: illegal argument (%d) of type %s, %s expected", name(), iArg, arg.getClass().getName(), type.getName()));
-                    System.err.println(String.format("InternalError: Protocol method %s: illegal argument (%d) of type %s, %s expected (ProtocolMethod.java)", name(), iArg, arg.getClass().getName(), type.getName()));
+                    System.err.printf("InternalError: Protocol method %s: illegal argument (%d) of type %s, %s expected (ProtocolMethod.java)%n", name(), iArg, arg.getClass().getName(), type.getName());
                 }
             }
         } catch (Exception e) {
@@ -183,7 +182,7 @@ public enum ProtocolMethod {
         }
         if (!ReflectionUtil.isInstance(value, returnType)) {
             //throw new IllegalStateException(String.format("Protocol method %s: illegal return object type %s returned by client, expected %s", name(), value.getClass().getName(), getReturnType().getName()));
-            System.err.println(String.format("IllegalStateException: Protocol method %s: illegal return object type %s returned by client, expected %s  (ProtocolMethod.java)", name(), value.getClass().getName(), getReturnType().getName()));
+            System.err.printf("IllegalStateException: Protocol method %s: illegal return object type %s returned by client, expected %s  (ProtocolMethod.java)%n", name(), value.getClass().getName(), getReturnType().getName());
         }
     }
 }

@@ -17,21 +17,15 @@
  */
 package forge.util;
 
-import java.io.Serializable;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.concurrent.ConcurrentHashMap;
-
-import com.google.common.base.Function;
-import com.google.common.base.Predicate;
-
 import com.google.common.collect.Maps;
 import forge.item.InventoryItem;
+
+import java.io.Serializable;
+import java.util.*;
+import java.util.Map.Entry;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.*;
+import java.util.stream.Collector;
 
 /**
  * <p>
@@ -44,27 +38,6 @@ import forge.item.InventoryItem;
  */
 public class ItemPool<T extends InventoryItem> implements Iterable<Entry<T, Integer>>, Serializable {
     private static final long serialVersionUID = 6572047177527559797L;
-
-    public final transient Function<Entry<T, Integer>, T> FN_GET_KEY = new Function<Entry<T, Integer>, T>() {
-        @Override
-        public T apply(final Entry<T, Integer> from) {
-            return from.getKey();
-        }
-    };
-
-    public final transient Function<Entry<T, Integer>, String> FN_GET_NAME = new Function<Entry<T, Integer>, String>() {
-        @Override
-        public String apply(final Entry<T, Integer> from) {
-            return from.getKey().getName();
-        }
-    };
-
-    public final transient Function<Entry<T, Integer>, Integer> FN_GET_COUNT = new Function<Entry<T, Integer>, Integer>() {
-        @Override
-        public Integer apply(final Entry<T, Integer> from) {
-            return from.getValue();
-        }
-    };
 
     public ItemPool(final Class<T> cls) {
         this(new ConcurrentHashMap<>(), cls);
@@ -95,6 +68,37 @@ public class ItemPool<T extends InventoryItem> implements Iterable<Entry<T, Inte
             }
         }
         return result;
+    }
+
+    public static <T extends InventoryItem> Collector<T, ?, ItemPool<T>> collector(Class<T> cls) {
+        return new Collector<T, ItemPool<T>, ItemPool<T>>() {
+            @Override
+            public Supplier<ItemPool<T>> supplier() {
+                return () -> new ItemPool<T>(cls);
+            }
+
+            @Override
+            public BiConsumer<ItemPool<T>, T> accumulator() {
+                return (pool, item) -> {
+                    if (cls.isInstance(item)) pool.add(cls.cast(item), 1);
+                };
+            }
+
+            @Override
+            public BinaryOperator<ItemPool<T>> combiner() {
+                return (first, second) -> {
+                    first.addAll(second);
+                    return first;
+                };
+            }
+
+            @Override public Function<ItemPool<T>, ItemPool<T>> finisher() {
+                return Function.identity();
+            }
+            @Override public Set<Characteristics> characteristics() {
+                return EnumSet.of(Characteristics.IDENTITY_FINISH);
+            }
+        };
     }
 
     protected ItemPool(final Map<T, Integer> items0, final Class<T> cls) {
@@ -139,21 +143,16 @@ public class ItemPool<T extends InventoryItem> implements Iterable<Entry<T, Inte
 
     public int countAll(Predicate<T> condition){
         int count = 0;
-        for (Integer v : Maps.filterKeys(this.items, condition).values())
+        for (Integer v : Maps.filterKeys(this.items, condition::test).values())
             count += v;
         return count;
 
     }
 
     @SuppressWarnings("unchecked")
-    public final <U extends InventoryItem> int countAll(Predicate<U> condition, Class<U> cls) {
+    public final <U extends InventoryItem> int countAll(Predicate<? super U> condition, Class<U> cls) {
         int count = 0;
-        Map<T, Integer> matchingKeys = Maps.filterKeys(this.items, new Predicate<T>() {
-            @Override
-            public boolean apply(T item) {
-                return cls.isInstance(item) && (condition.apply((U)item));
-            }
-        });
+        Map<T, Integer> matchingKeys = Maps.filterKeys(this.items, item -> cls.isInstance(item) && (condition.test((U)item)));
         for (Integer i : matchingKeys.values()) {
             count += i;
         }

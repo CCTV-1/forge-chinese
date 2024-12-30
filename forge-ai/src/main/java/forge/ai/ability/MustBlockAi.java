@@ -1,11 +1,6 @@
 package forge.ai.ability;
 
-import java.util.List;
-import java.util.Map;
-
-import com.google.common.base.Predicate;
 import com.google.common.collect.Iterables;
-
 import forge.ai.AiCardMemory;
 import forge.ai.ComputerUtilCard;
 import forge.ai.ComputerUtilCombat;
@@ -20,6 +15,9 @@ import forge.game.keyword.Keyword;
 import forge.game.phase.PhaseType;
 import forge.game.player.Player;
 import forge.game.spellability.SpellAbility;
+
+import java.util.List;
+import java.util.Map;
 
 public class MustBlockAi extends SpellAbilityAi {
 
@@ -122,28 +120,24 @@ public class MustBlockAi extends SpellAbilityAi {
 
     private List<Card> determineBlockerFromList(final Card attacker, final Player ai, Iterable<Card> options, SpellAbility sa,
             final boolean onlyLethal, final boolean testTapped) {
-        List<Card> list = CardLists.filter(options, new Predicate<Card>() {
-            @Override
-            public boolean apply(final Card c) {
-                boolean tapped = c.isTapped();
-                if (testTapped) {
-                    c.setTapped(false);
-                }
-                if (!CombatUtil.canBlock(attacker, c)) {
-                    return false;
-                }
-                if (ComputerUtilCombat.canDestroyAttacker(ai, attacker, c, null, false)) {
-                    return false;
-                }
-                if (onlyLethal && !ComputerUtilCombat.canDestroyBlocker(ai, c, attacker, null, false)) {
-                    return false;
-                }
-                if (testTapped) {
-                    c.setTapped(tapped);
-                }
-                return true;
+        List<Card> list = CardLists.filter(options, c -> {
+            boolean tapped = c.isTapped();
+            if (testTapped) {
+                c.setTapped(false);
             }
-
+            if (!CombatUtil.canBlock(attacker, c)) {
+                return false;
+            }
+            if (ComputerUtilCombat.canDestroyAttacker(ai, attacker, c, null, false)) {
+                return false;
+            }
+            if (onlyLethal && !ComputerUtilCombat.canDestroyBlocker(ai, c, attacker, null, false)) {
+                return false;
+            }
+            if (testTapped) {
+                c.setTapped(tapped);
+            }
+            return true;
         });
 
         return list;

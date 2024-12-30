@@ -1,12 +1,6 @@
 package forge.ai.ability;
 
-import com.google.common.base.Predicate;
-
-import forge.ai.ComputerUtilCard;
-import forge.ai.ComputerUtilCombat;
-import forge.ai.ComputerUtilCost;
-import forge.ai.ComputerUtilMana;
-import forge.ai.SpellAbilityAi;
+import forge.ai.*;
 import forge.game.ability.AbilityUtils;
 import forge.game.card.Card;
 import forge.game.card.CardCollection;
@@ -18,6 +12,8 @@ import forge.game.player.Player;
 import forge.game.spellability.SpellAbility;
 import forge.game.zone.ZoneType;
 import forge.util.MyRandom;
+
+import java.util.function.Predicate;
 
 public class  DamageAllAi extends SpellAbilityAi {
     @Override
@@ -253,12 +249,7 @@ public class  DamageAllAi extends SpellAbilityAi {
         CardCollection list =
                 CardLists.getValidCards(player.getCardsIn(ZoneType.Battlefield), validC, source.getController(), source, sa);
 
-        final Predicate<Card> filterKillable = new Predicate<Card>() {
-            @Override
-            public boolean apply(final Card c) {
-                return ComputerUtilCombat.predictDamageTo(c, dmg, source, false) >= ComputerUtilCombat.getDamageToKill(c, false);
-            }
-        };
+        final Predicate<Card> filterKillable = c -> ComputerUtilCombat.predictDamageTo(c, dmg, source, false) >= ComputerUtilCombat.getDamageToKill(c, false);
 
         list = CardLists.getNotKeyword(list, Keyword.INDESTRUCTIBLE);
         list = CardLists.filter(list, filterKillable);

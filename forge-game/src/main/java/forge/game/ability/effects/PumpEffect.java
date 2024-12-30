@@ -4,13 +4,12 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
+import forge.util.*;
 import org.apache.commons.lang3.StringUtils;
 
-import com.google.common.base.Function;
-import com.google.common.base.Predicate;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 
 import forge.GameCommand;
@@ -29,10 +28,6 @@ import forge.game.player.PlayerCollection;
 import forge.game.spellability.AbilitySub;
 import forge.game.spellability.SpellAbility;
 import forge.game.zone.ZoneType;
-import forge.util.Aggregates;
-import forge.util.Lang;
-import forge.util.Localizer;
-import forge.util.TextUtil;
 
 public class PumpEffect extends SpellAbilityEffect {
 
@@ -83,7 +78,7 @@ public class PumpEffect extends SpellAbilityEffect {
                 params.put("Category", "Keywords");
                 gameCard.addPerpetual(params);
             }
-            gameCard.addChangedCardKeywords(kws, Lists.newArrayList(), false, timestamp, 0);                
+            gameCard.addChangedCardKeywords(kws, Lists.newArrayList(), false, timestamp, null);
             
         }
         if (!hiddenKws.isEmpty()) {
@@ -361,23 +356,19 @@ public class PumpEffect extends SpellAbilityEffect {
                 PlayerCollection players = AbilityUtils.getDefinedPlayers(host, defined, sa);
                 if (players.isEmpty()) return;
                 List<String> newKeywords = Lists.newArrayList();
-                Iterables.removeIf(keywords, new Predicate<String>() {
-
-                    @Override
-                    public boolean apply(String input) {
-                        if (!input.contains("ChosenPlayerUID") && !input.contains("ChosenPlayerName")) {
-                            return false;
-                        }
-                        for (Player p : players) {
-                            String replacedID = String.valueOf(p.getId());
-                            String replacedName = p.getName();
-
-                            String s = input.replaceAll("ChosenPlayerUID", replacedID);
-                            s = s.replaceAll("ChosenPlayerName", replacedName);
-                            newKeywords.add(s);
-                        }
-                        return true;
+                keywords.removeIf(input -> {
+                    if (!input.contains("ChosenPlayerUID") && !input.contains("ChosenPlayerName")) {
+                        return false;
                     }
+                    for (Player p : players) {
+                        String replacedID = String.valueOf(p.getId());
+                        String replacedName = p.getName();
+
+                        String s = input.replaceAll("ChosenPlayerUID", replacedID);
+                        s = s.replaceAll("ChosenPlayerName", replacedName);
+                        newKeywords.add(s);
+                    }
+                    return true;
                 });
                 keywords.addAll(newKeywords);
             }
@@ -480,31 +471,15 @@ public class PumpEffect extends SpellAbilityEffect {
             List<String> affectedKeywords = Lists.newArrayList(keywords);
 
             if (!affectedKeywords.isEmpty()) {
-                Iterables.removeIf(affectedKeywords, new Predicate<String>() {
-                    @Override
-                    public boolean apply(String input) {
-                        if (input.contains("CardManaCost")) {
-                            if (tgtC.getManaCost().isNoCost()) {
-                                return true;
-                            }
-                        }
-                        return false;
+                affectedKeywords = affectedKeywords.stream().map(input -> {
+                    if (input.contains("CardManaCost")) {
+                        input = input.replace("CardManaCost", tgtC.getManaCost().getShortString());
+                    } else if (input.contains("ConvertedManaCost")) {
+                        final String costcmc = Integer.toString(tgtC.getCMC());
+                        input = input.replace("ConvertedManaCost", costcmc);
                     }
-                });
-
-                affectedKeywords = Lists.transform(affectedKeywords, new Function<String, String>() {
-
-                    @Override
-                    public String apply(String input) {
-                        if (input.contains("CardManaCost")) {
-                            input = input.replace("CardManaCost", tgtC.getManaCost().getShortString());
-                        } else if (input.contains("ConvertedManaCost")) {
-                            final String costcmc = Integer.toString(tgtC.getCMC());
-                            input = input.replace("ConvertedManaCost", costcmc);
-                        }
-                        return input;
-                    }
-                });
+                    return input;
+                }).collect(Collectors.toList());
             }
 
             if (sa.hasParam("NumAtt") && sa.getParam("NumAtt").equals("Double")) {

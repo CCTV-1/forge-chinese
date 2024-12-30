@@ -18,9 +18,9 @@
 
 package forge.game.card;
 
-import java.util.Locale;
-
 import com.google.common.collect.ImmutableList;
+
+import java.util.Locale;
 
 /**
  * The class Counters.
@@ -35,7 +35,7 @@ public enum CounterEnumType {
 
     LOYALTY("LOYAL", 198, 198, 198),
 
-    ACORN("ACORN", 139,69,19),
+    ACORN("ACORN", 139, 69, 19),
 
     AEGIS("AEGIS", 207, 207, 207),
 
@@ -49,20 +49,24 @@ public enum CounterEnumType {
 
     AWAKENING("AWAKE", 0, 231, 79),
 
+    BAIT("BAIT", 120, 100, 60),
+
     BLAZE("BLAZE", 255, 124, 82),
-    
+
     BLESSING("BLESS", 251, 0, 94),
+
+    BLIGHT("BLGHT", 130, 115, 160),
 
     BLOOD("BLOOD", 255, 108, 111),
 
     BLOODLINE("BLDLN", 224, 44, 44),
-    
+
     BLOODSTAIN("BLDST", 224, 44, 44),
 
     BORE("BORE", 98, 47, 34),
 
     BOUNTY("BOUNT", 255, 158, 0),
-    
+
     BRAIN("BRAIN", 197, 62, 212),
 
     BRIBERY("BRIBE", 172, 201, 235),
@@ -153,6 +157,10 @@ public enum CounterEnumType {
 
     FEATHER("FTHR", 195, 202, 165),
 
+    FEEDING("FEED", 245, 21, 5),
+
+    FELLOWSHIP("FLWS", 255, 255, 255),
+
     FETCH("FETCH", 180, 235, 52),
 
     FILIBUSTER("FLBTR", 255, 179, 119),
@@ -215,6 +223,10 @@ public enum CounterEnumType {
 
     INCARNATION("INCRN", 247, 206, 64),
 
+    INCUBATION("INCBT", 40, 210, 25),
+
+    INGREDIENT("INGRD", 180, 50, 145),
+    
     INFECTION("INFCT", 0, 230, 66),
     
     INFLUENCE("INFL", 201, 99, 212),
@@ -323,6 +335,8 @@ public enum CounterEnumType {
 
     POLYP("POLYP", 236, 185, 198),
 
+    POSSESSION("POSSN", 60, 65, 85),
+
     PREY("PREY", 240, 0, 0),
 
     PUPA("PUPA", 0, 223, 203),
@@ -340,6 +354,8 @@ public enum CounterEnumType {
     P2P2("+2/+2", "+2/+2", 96, 226, 23),
 
     QUEST("QUEST", 251, 189, 0),
+
+    RELEASE("RELEASE", 200, 210, 50),
 
     REPRIEVE("REPR", 240, 120, 50),
 

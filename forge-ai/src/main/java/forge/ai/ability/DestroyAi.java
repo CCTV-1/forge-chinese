@@ -1,16 +1,11 @@
 package forge.ai.ability;
 
-import com.google.common.base.Predicate;
-import com.google.common.base.Predicates;
+import java.util.function.Predicate;
 
 import forge.ai.*;
 import forge.game.ability.AbilityUtils;
 import forge.game.ability.ApiType;
-import forge.game.card.Card;
-import forge.game.card.CardCollection;
-import forge.game.card.CardLists;
-import forge.game.card.CardPredicates;
-import forge.game.card.CounterEnumType;
+import forge.game.card.*;
 import forge.game.cost.Cost;
 import forge.game.cost.CostPart;
 import forge.game.cost.CostSacrifice;
@@ -21,6 +16,7 @@ import forge.game.player.Player;
 import forge.game.spellability.SpellAbility;
 import forge.game.staticability.StaticAbilityMustTarget;
 import forge.game.zone.ZoneType;
+import forge.util.collect.FCollectionView;
 
 public class DestroyAi extends SpellAbilityAi {
     @Override
@@ -33,9 +29,7 @@ public class DestroyAi extends SpellAbilityAi {
         final Card source = sa.getHostCard();
         if (sa.usesTargeting()) {
             sa.resetTargets();
-            if ("MadSarkhanDragon".equals(aiLogic)) {
-                return SpecialCardAi.SarkhanTheMad.considerMakeDragon(ai, sa);
-            } else if (aiLogic.startsWith("MinLoyalty.")) {
+            if (aiLogic.startsWith("MinLoyalty.")) {
                 int minLoyalty = Integer.parseInt(aiLogic.substring(aiLogic.indexOf(".") + 1));
                 if (source.getCounters(CounterEnumType.LOYALTY) < minLoyalty) {
                     return false;
@@ -175,32 +169,30 @@ public class DestroyAi extends SpellAbilityAi {
                 list = ComputerUtilCard.prioritizeCreaturesWorthRemovingNow(ai, list, false);
             }
             if (!playReusable(ai, sa)) {
-                list = CardLists.filter(list, Predicates.not(CardPredicates.hasCounter(CounterEnumType.SHIELD, 1)));
+                Predicate<Card> hasCounter = CardPredicates.hasCounter(CounterEnumType.SHIELD, 1);
+                list = CardLists.filter(list, hasCounter.negate());
 
-                list = CardLists.filter(list, new Predicate<Card>() {
-                    @Override
-                    public boolean apply(final Card c) {
-                        //Check for cards that can be sacrificed in response
-                        for (final SpellAbility ability : c.getAllSpellAbilities()) {
-                            if (ability.isActivatedAbility()) {
-                                final Cost cost = ability.getPayCosts();
-                                for (final CostPart part : cost.getCostParts()) {
-                                    if (!(part instanceof CostSacrifice)) {
-                                        continue;
-                                    }
-                                    CostSacrifice sacCost = (CostSacrifice) part;
-                                    if (sacCost.payCostFromSource() && ComputerUtilCost.canPayCost(ability, c.getController(), false)) {
-                                        return false;
-                                    }
+                list = CardLists.filter(list, c -> {
+                    //Check for cards that can be sacrificed in response
+                    for (final SpellAbility ability : c.getAllSpellAbilities()) {
+                        if (ability.isActivatedAbility()) {
+                            final Cost cost = ability.getPayCosts();
+                            for (final CostPart part : cost.getCostParts()) {
+                                if (!(part instanceof CostSacrifice)) {
+                                    continue;
+                                }
+                                CostSacrifice sacCost = (CostSacrifice) part;
+                                if (sacCost.payCostFromSource() && ComputerUtilCost.canPayCost(ability, c.getController(), false)) {
+                                    return false;
                                 }
                             }
                         }
-                        if (c.hasSVar("SacMe")) {
-                            return false;
-                        }
-                        //Check for undying
-                        return !c.hasKeyword(Keyword.UNDYING) || c.getCounters(CounterEnumType.P1P1) > 0;
                     }
+                    if (c.hasSVar("SacMe")) {
+                        return false;
+                    }
+                    //Check for undying
+                    return !c.hasKeyword(Keyword.UNDYING) || c.getCounters(CounterEnumType.P1P1) > 0;
                 });
             }
 
@@ -208,12 +200,7 @@ public class DestroyAi extends SpellAbilityAi {
             // regeneration shield
             if (!noRegen) {
                 // TODO filter out things that might be tougher?
-                list = CardLists.filter(list, new Predicate<Card>() {
-                    @Override
-                    public boolean apply(final Card c) {
-                        return c.getShieldCount() == 0 && !ComputerUtil.canRegenerate(ai, c);
-                    }
-                });
+                list = CardLists.filter(list, c -> c.getShieldCount() == 0 && !ComputerUtil.canRegenerate(ai, c));
             }
 
             // Try to avoid targeting creatures that are dead on board
@@ -337,7 +324,8 @@ public class DestroyAi extends SpellAbilityAi {
 
             CardCollection preferred = CardLists.getNotKeyword(list, Keyword.INDESTRUCTIBLE);
             preferred = CardLists.filterControlledBy(preferred, ai.getOpponents());
-            preferred = CardLists.filter(preferred, Predicates.not(CardPredicates.hasCounter(CounterEnumType.SHIELD, 1)));
+            Predicate<Card> hasCounter = CardPredicates.hasCounter(CounterEnumType.SHIELD, 1);
+            preferred = CardLists.filter(preferred, hasCounter.negate());
             if (CardLists.getNotType(preferred, "Creature").isEmpty()) {
                 preferred = ComputerUtilCard.prioritizeCreaturesWorthRemovingNow(ai, preferred, false);
             }
@@ -347,12 +335,7 @@ public class DestroyAi extends SpellAbilityAi {
             if (!noRegen) {
                 // TODO filter out things that could regenerate in response?
                 // might be tougher?
-                preferred = CardLists.filter(preferred, new Predicate<Card>() {
-                    @Override
-                    public boolean apply(final Card c) {
-                        return c.getShieldCount() == 0;
-                    }
-                });
+                preferred = CardLists.filter(preferred, c -> c.getShieldCount() == 0);
             }
 
             // Filter AI-specific targets if provided
@@ -443,8 +426,8 @@ public class DestroyAi extends SpellAbilityAi {
         boolean nonBasicTgt = !tgtLand.isBasicLand();
 
         // Try not to lose tempo too much and not to mana-screw yourself when considering this logic
-        int numLandsInHand = CardLists.count(ai.getCardsIn(ZoneType.Hand), CardPredicates.Presets.LANDS_PRODUCING_MANA);
-        int numLandsOTB = CardLists.count(ai.getCardsIn(ZoneType.Battlefield), CardPredicates.Presets.LANDS_PRODUCING_MANA);
+        int numLandsInHand = CardLists.count(ai.getCardsIn(ZoneType.Hand), CardPredicates.LANDS_PRODUCING_MANA);
+        int numLandsOTB = CardLists.count(ai.getCardsIn(ZoneType.Battlefield), CardPredicates.LANDS_PRODUCING_MANA);
 
         // If the opponent skipped a land drop, consider not looking at having the extra land in hand if the profile allows it
         boolean isHighPriority = highPriorityIfNoLandDrop && oppSkippedLandDrop;
@@ -462,4 +445,20 @@ public class DestroyAi extends SpellAbilityAi {
         }
     }
 
+    @Override
+    public boolean willPayUnlessCost(SpellAbility sa, Player payer, Cost cost, boolean alreadyPaid, FCollectionView<Player> payers) {
+        final Card host = sa.getHostCard();
+        if (alreadyPaid) {
+            return false;
+        }
+
+        if (sa.hasParam("Defined")) {
+            CardCollection cards = AbilityUtils.getDefinedCards(host, sa.getParam("Defined"), sa);
+            if (!cards.anyMatch(CardPredicates.isController(payer))) {
+                return false;
+            }
+        }
+
+        return super.willPayUnlessCost(sa, payer, cost, alreadyPaid, payers);
+    }
 }

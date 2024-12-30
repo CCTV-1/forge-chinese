@@ -18,7 +18,6 @@
 package forge.game.card;
 
 import com.esotericsoftware.minlog.Log;
-import com.google.common.base.Predicates;
 import com.google.common.collect.*;
 import forge.GameCommand;
 import forge.StaticData;
@@ -37,6 +36,7 @@ import forge.game.cost.Cost;
 import forge.game.event.*;
 import forge.game.event.GameEventCardDamaged.DamageType;
 import forge.game.keyword.*;
+import forge.game.mana.ManaCostBeingPaid;
 import forge.game.player.Player;
 import forge.game.player.PlayerCollection;
 import forge.game.replacement.*;
@@ -75,13 +75,14 @@ import java.util.Map.Entry;
  * @author Forge
  * @version $Id$
  */
-public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
+public class Card extends GameEntity implements Comparable<Card>, IHasSVars, ITranslatable {
     private Game game;
     private final IPaperCard paperCard;
 
     private final Map<CardStateName, CardState> states = Maps.newEnumMap(CardStateName.class);
     private CardState currentState;
     private CardStateName currentStateName = CardStateName.Original;
+    private GamePieceType gamePieceType = GamePieceType.CARD;
 
     private Zone castFrom;
     private SpellAbility castSA;
@@ -99,7 +100,6 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
     private Map<Long, CardCollection> mustBlockCards = Maps.newHashMap();
     private List<Card> blockedThisTurn = Lists.newArrayList();
     private List<Card> blockedByThisTurn = Lists.newArrayList();
-    private Map<Player, CardCollection> chosenMap = Maps.newHashMap();
 
     private CardCollection untilLeavesBattlefield = new CardCollection();
 
@@ -111,8 +111,6 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
     private SpellAbility tokenSpawningAbility;
 
     private GameEntity entityAttachedTo;
-
-    private Map<StaticAbility, CardPlayOption> mayPlay = Maps.newHashMap();
 
     // changes by AF animate and continuous static effects
 
@@ -159,6 +157,8 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
 
     private final Table<Long, Long, Map<String, String>> changedSVars = TreeBasedTable.create();
 
+    private Map<StaticAbility, CardPlayOption> mayPlay = Maps.newHashMap();
+
     private final Map<Long, PlayerCollection> mayLook = Maps.newHashMap();
     private final PlayerCollection mayLookFaceDownExile = new PlayerCollection();
     private final PlayerCollection mayLookTemp = new PlayerCollection();
@@ -186,23 +186,21 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
     private boolean startsGameInPlay = false;
     private boolean drawnThisTurn = false;
     private boolean foughtThisTurn = false;
-    private boolean becameTargetThisTurn = false;
+    private boolean becameTargetThisTurn, valiant = false;
     private boolean enlistedThisCombat = false;
     private boolean startedTheTurnUntapped = false;
     private boolean cameUnderControlSinceLastUpkeep = true; // for Echo
     private boolean tapped = false;
     private boolean sickness = true; // summoning sickness
-    private boolean token = false;
+    private boolean collectible = false;
     private boolean tokenCard = false;
     private Card copiedPermanent;
-    private boolean copiedSpell = false;
 
     private boolean unearthed;
     private boolean ringbearer;
     private boolean monstrous;
-
     private boolean renowned;
-    private boolean solved = false;
+    private boolean solved;
     private Long suspectedTimestamp = null;
     private StaticAbility suspectedStatic = null;
 
@@ -213,6 +211,9 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
     private boolean foretoldCostByEffect;
 
     private boolean plotted;
+
+    private Set<CardStateName> unlockedRooms = EnumSet.noneOf(CardStateName.class);
+    private Map<CardStateName, SpellAbility> unlockAbilities = Maps.newEnumMap(CardStateName.class);
 
     private boolean specialized;
 
@@ -247,11 +248,8 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
 
     private boolean usedToPayCost = false;
 
-    // for Vanguard / Manapool / Emblems etc.
-    private boolean isImmutable = false;
     private boolean isEmblem = false;
     private boolean isBoon = false;
-    private boolean isAttractionCard = false;
 
     private int exertThisTurn = 0;
     private PlayerCollection exertedByPlayer = new PlayerCollection();
@@ -292,6 +290,7 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
     private String chosenType2 = "";
     private List<String> notedTypes = new ArrayList<>();
     private List<String> chosenColors;
+    private Set<String> chosenColorID;
     private List<String> chosenName = new ArrayList<>();
     private Integer chosenNumber;
     private Player chosenPlayer;
@@ -303,6 +302,7 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
     private String currentRoom = null;
     private String sector = null;
     private String chosenSector = null;
+    private Map<Player, CardCollection> chosenMap = Maps.newHashMap();
 
     // points to the host that exiled this card, usually the one that has this object it its exiledCards field
     // however it could also be a different card which isn't an error but means the exiling SA was gained
@@ -330,10 +330,10 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
     // breaking when the LKI object is changed to a different card state.
     private int lkiCMC = -1;
 
+    private CombatLki combatLKI;
+
     private CardRules cardRules;
     private final CardView view;
-
-    private Table<Player, CounterType, Integer> etbCounters = HashBasedTable.create();
 
     private SpellAbility[] basicLandAbilities = new SpellAbility[MagicColor.WUBRG.length];
 
@@ -353,8 +353,6 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
     private final Table<SpellAbility, StaticAbility, List<String>> chosenModesGameStatic = HashBasedTable.create();
     private final Table<SpellAbility, StaticAbility, List<String>> chosenModesYourCombatStatic = HashBasedTable.create();
     private final Table<SpellAbility, StaticAbility, List<String>> chosenModesYourLastCombatStatic = HashBasedTable.create();
-
-    private CombatLki combatLKI;
 
     private ReplacementEffect shieldCounterReplaceDamage = null;
     private ReplacementEffect shieldCounterReplaceDestroy = null;
@@ -400,6 +398,8 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
         view.updateSickness(this);
         view.updateClassLevel(this);
         view.updateDraftAction(this);
+        if (paperCard != null)
+            setChosenColorID(paperCard.getColorID());
     }
 
     public boolean changeToState(final CardStateName state) {
@@ -448,6 +448,9 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
         if (state == CardStateName.FaceDown) {
             return getFaceDownState();
         }
+        if (state == CardStateName.EmptyRoom) {
+            return getEmptyRoomState();
+        }
         CardCloneStates clStates = getLastClonedState();
         if (clStates == null) {
             return getOriginalState(state);
@@ -456,7 +459,7 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
     }
 
     public boolean hasState(final CardStateName state) {
-        if (state == CardStateName.FaceDown) {
+        if (state == CardStateName.FaceDown || state == CardStateName.EmptyRoom) {
             return true;
         }
         CardCloneStates clStates = getLastClonedState();
@@ -469,6 +472,9 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
     public CardState getOriginalState(final CardStateName state) {
         if (state == CardStateName.FaceDown) {
             return getFaceDownState();
+        }
+        if (state == CardStateName.EmptyRoom) {
+            return getEmptyRoomState();
         }
         return states.get(state);
     }
@@ -496,7 +502,7 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
         boolean needsTransformAnimation = transform || rollback;
         // faceDown has higher priority over clone states
         // while text change states doesn't apply while the card is faceDown
-        if (state != CardStateName.FaceDown) {
+        if (state != CardStateName.FaceDown && state != CardStateName.EmptyRoom) {
             CardCloneStates cloneStates = getLastClonedState();
             if (cloneStates != null) {
                 if (!cloneStates.containsKey(state)) {
@@ -800,19 +806,22 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
         return setState(CardStateName.FaceDown, false);
     }
 
+    public boolean canBeTurnedFaceUp() {
+        Map<AbilityKey, Object> repParams = AbilityKey.mapFromAffected(this);
+        return !getGame().getReplacementHandler().cantHappenCheck(ReplacementType.TurnFaceUp, repParams);
+    }
+
+    public void forceTurnFaceUp() {
+        turnFaceUp(false, null);
+    }
+
     public boolean turnFaceUp(SpellAbility cause) {
         return turnFaceUp(true, cause);
     }
     public boolean turnFaceUp(boolean runTriggers, SpellAbility cause) {
-        if (!isFaceDown()) {
+        if (!isFaceDown() || !canBeTurnedFaceUp()) {
             return false;
         }
-
-        // Check replacement effects
-        Map<AbilityKey, Object> repParams = AbilityKey.mapFromAffected(this);
-        List<ReplacementEffect> list = game.getReplacementHandler().getReplacementList(ReplacementType.TurnFaceUp,
-                repParams, ReplacementLayer.CantHappen);
-        if (!list.isEmpty()) return false;
 
         CardCollectionView cards = hasMergedCard() ? getMergedCards() : new CardCollection(this);
         boolean retResult = false;
@@ -848,10 +857,9 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
             triggerHandler.registerActiveTrigger(this, false);
         }
         if (runTriggers) {
-            // Run replacement effects
+            Map<AbilityKey, Object> repParams = AbilityKey.mapFromAffected(this);
             game.getReplacementHandler().run(ReplacementType.TurnFaceUp, repParams);
 
-            // Run triggers
             final Map<AbilityKey, Object> runParams = AbilityKey.mapFromCard(this);
             runParams.put(AbilityKey.Cause, cause);
 
@@ -936,6 +944,10 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
         return alt ? StaticData.instance().getCommonCards().getName(name, true) :  name;
     }
 
+    public final boolean hasNameOverwrite() {
+        return changedCardNames.values().stream().anyMatch(CardChangedName::isOverwrite);
+    }
+
     public final boolean hasNonLegendaryCreatureNames() {
         boolean result = false;
         for (CardChangedName change : this.changedCardNames.values()) {
@@ -974,13 +986,33 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
         currentState.getView().updateName(currentState);
     }
 
-    public Table<Long, Long, CardChangedName> getChangedCardNames() {
-        return changedCardNames;
+    public void setGamePieceType(GamePieceType gamePieceType) {
+        this.gamePieceType = gamePieceType;
+        this.view.updateGamePieceType(this);
+        this.view.updateToken(this);
     }
 
-    public void setChangedCardNames(Table<Long, Long, CardChangedName> changedCardNames) {
-        this.changedCardNames.clear();
-        this.changedCardNames.putAll(changedCardNames);
+    public GamePieceType getGamePieceType() {
+        return gamePieceType;
+    }
+
+    // is this "Card" supposed to be a token?
+    public final boolean isToken() {
+        if (isInPlay() && hasMergedCard()) {
+            return getTopMergedCard().gamePieceType == GamePieceType.TOKEN;
+        }
+        return gamePieceType == GamePieceType.TOKEN;
+    }
+    public final boolean isRealToken() {
+        return gamePieceType == GamePieceType.TOKEN;
+    }
+
+    public final boolean isCopiedSpell() {
+        return this.gamePieceType == GamePieceType.COPIED_SPELL;
+    }
+
+    public final boolean isImmutable() {
+        return this.gamePieceType == GamePieceType.EFFECT;
     }
 
     public final boolean isInAlternateState() {
@@ -1018,7 +1050,12 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
     }
 
     public final boolean isSplitCard() {
-        return getRules() != null && getRules().getSplitType() == CardSplitType.Split;
+        // Normal Split Cards, these need to return true before Split States are added
+        if (getRules() != null && getRules().getSplitType() == CardSplitType.Split) {
+            return true;
+        };
+        // in case or clones or copies
+        return hasState(CardStateName.LeftSplit);
     }
 
     public final boolean isAdventureCard() {
@@ -1297,6 +1334,26 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
         }
     }
 
+    /**
+     * Gives a collection of all cards that are melded, merged, or are otherwise representing
+     * a single permanent alongside this one.
+     * @param includeSelf Whether this card is included in the resulting CardCollection.
+     */
+    public final CardCollection getAllComponentCards(boolean includeSelf) {
+        CardCollection out = new CardCollection();
+        if(includeSelf)
+            out.add(this);
+        if(this.getMeldedWith() != null)
+            out.add(this.getMeldedWith());
+        if(mergedTo != null) //Should be safe to recurse here so long as mergedTo remains a one-way relationship.
+            out.addAll(mergedTo.getAllComponentCards(true));
+        if(this.hasMergedCard())
+            out.addAll(mergedCards);
+        if(!includeSelf) //mergedCards includes self.
+            out.remove(this);
+        return out;
+    }
+
     public final void moveMergedToSubgame(SpellAbility cause) {
         if (hasMergedCard()) {
             Zone zone = getZone();
@@ -1536,6 +1593,21 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
     }
 
     @Override
+    public final boolean canRemoveCounters(final CounterType type) {
+        if (isPhasedOut()) {
+            return false;
+        }
+        final Map<AbilityKey, Object> repParams = AbilityKey.mapFromAffected(this);
+        repParams.put(AbilityKey.CounterType, type);
+        repParams.put(AbilityKey.Result, 0);
+        repParams.put(AbilityKey.IsDamage, false);
+        if (game.getReplacementHandler().cantHappenCheck(ReplacementType.RemoveCounter, repParams)) {
+            return false;
+        }
+        return true;
+    }
+
+    @Override
     public void addCounterInternal(final CounterType counterType, final int n, final Player source, final boolean fireEvents, GameEntityCounterTable table, Map<AbilityKey, Object> params) {
         int addAmount = n;
         // Rules say it is only a SBA, but is it checked there too?
@@ -1653,7 +1725,7 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
         if (!Keyword.smartValueOf(counterType.toString().split(":")[0]).isMultipleRedundant()) {
             num = getCounters(counterType);
         }
-        addChangedCardKeywords(Collections.nCopies(num, counterType.toString()), null, false, timestamp, 0, updateView);
+        addChangedCardKeywords(Collections.nCopies(num, counterType.toString()), null, false, timestamp, null, updateView);
         return true;
     }
 
@@ -1671,11 +1743,11 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
     }
 
     @Override
-    public final void subtractCounter(final CounterType counterName, final int n, final Player remover) {
-        subtractCounter(counterName, n, remover, false);
+    public final int subtractCounter(final CounterType counterName, final int n, final Player remover) {
+        return subtractCounter(counterName, n, remover, false);
     }
 
-    public final void subtractCounter(final CounterType counterName, final int n, final Player remover, final boolean isDamage) {
+    public final int subtractCounter(final CounterType counterName, final int n, final Player remover, final boolean isDamage) {
         int oldValue = getCounters(counterName);
         int newValue = Math.max(oldValue - n, 0);
 
@@ -1693,12 +1765,14 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
                     newValue = 0;
                 }
                 break;
+            case Replaced:
+                return 0;
             default:
                 break;
         }
 
         final int delta = oldValue - newValue;
-        if (delta == 0) { return; }
+        if (delta == 0) { return 0; }
 
         int powerBonusBefore = getPowerBonusFromCounters();
         int toughnessBonusBefore = getToughnessBonusFromCounters();
@@ -1735,6 +1809,8 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
         runParams.put(AbilityKey.CounterAmount, delta);
         runParams.put(AbilityKey.NewCounterAmount, newValue);
         getGame().getTriggerHandler().runTrigger(TriggerType.CounterRemovedOnce, runParams, false);
+
+        return delta;
     }
 
     @Override
@@ -1923,7 +1999,7 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
     public final Integer getChosenNumber() {
         return chosenNumber;
     }
-    
+
     public final void setChosenNumber(final int i) { setChosenNumber(i, false); }
     public final void setChosenNumber(final int i, final boolean secret) {
         chosenNumber = i;
@@ -2034,7 +2110,19 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
     public boolean hasChosenColor(String s) {
         return chosenColors != null && chosenColors.contains(s);
     }
-
+    public final Set<String> getChosenColorID() {
+        if (chosenColorID == null) {
+            return Sets.newHashSet();
+        }
+        return chosenColorID;
+    }
+    public final void setChosenColorID(final Set<String> s) {
+        chosenColorID = s;
+        view.updateChosenColorID(this);
+    }
+    public boolean hasChosenColorSpire() {
+        return chosenColorID != null && !chosenColorID.isEmpty();
+    }
     public final Card getChosenCard() {
         return getChosenCards().getFirst();
     }
@@ -2202,7 +2290,7 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
             sbLong.append("\r\n");
         }
         sb.append(sbLong);
-        return CardTranslation.translateMultipleDescriptionText(sb.toString(), getName());
+        return CardTranslation.translateMultipleDescriptionText(sb.toString(), this);
     }
 
     // convert a keyword list to the String that should be displayed in game
@@ -2224,7 +2312,7 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
                             s.append(p[4]);
                         }
                     } else {
-                        s.append(getName()).append(" enters the battlefield with ");
+                        s.append(getName()).append(" enters with ");
                         s.append(Lang.nounWithNumeralExceptOne(p[2],
                                 CounterType.getType(p[1]).getName().toLowerCase() + " counter"));
                         s.append(" on it.");
@@ -2250,7 +2338,21 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
                     String[] k = keyword.split(":");
                     sbLong.append(k[0]);
                     if (k.length > 1) {
-                        final Cost mCost = new Cost(k[1], true);
+                        final Cost mCost;
+                        if ("ManaCost".equals(k[1])) {
+                            ManaCost cost;
+                            if (keyword.startsWith("Miracle") && k.length > 2) {
+                                // TODO better handle 2 hybrid, these should not be reduced?
+                                ManaCostBeingPaid mcbp = new ManaCostBeingPaid(getManaCost());
+                                mcbp.decreaseGenericMana(Integer.valueOf(k[2]));
+                                cost = mcbp.toManaCost();
+                            } else {
+                                cost = getManaCost();
+                            }
+                            mCost = new Cost(cost, true);
+                        } else {
+                            mCost = new Cost(k[1], true);
+                        }
                         if (mCost.isOnlyManaCost()) {
                             sbLong.append(" ");
                         } else {
@@ -2264,17 +2366,13 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
                             if (!mCost.isOnlyManaCost()) {
                                 sbLong.append(".");
                             }
-                            if (k.length > 2) {
+                            if (k.length > 3) {
                                 sbLong.append(". " + k[3]);
                             }
                         }
                         sbLong.append(" (").append(inst.getReminderText()).append(")");
                         sbLong.append("\r\n");
                     }
-                } else if (keyword.startsWith("Madness")) {
-                    // If no colon exists in Madness keyword, it must have been granted and assumed the cost from host
-                    sbLong.append("Madness ").append(this.getManaCost()).append(" (").append(inst.getReminderText());
-                    sbLong.append(")").append("\r\n");
                 } else if (keyword.startsWith("Reflect")) {
                     final String[] k = keyword.split(":");
                     sbLong.append(k[0]).append(" ").append(ManaCostParser.parse(k[1]));
@@ -2360,8 +2458,7 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
                     sbLong.append(inst.getReminderText()).append("\r\n");
                 } else if (keyword.startsWith("Strive") || keyword.startsWith("Escalate")
                         || keyword.startsWith("ETBReplacement")
-                        || keyword.startsWith("Affinity")
-                        || keyword.startsWith("UpkeepCost")) {
+                        || keyword.startsWith("Affinity")) {
                 } else if (keyword.equals("Provoke") || keyword.equals("Ingest") || keyword.equals("Unleash")
                         || keyword.equals("Soulbond") || keyword.equals("Partner") || keyword.equals("Retrace")
                         || keyword.equals("Living Weapon") || keyword.equals("Myriad") || keyword.equals("Exploit")
@@ -2386,9 +2483,9 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
                         String pip = mc.getFirstPhyrexianPip();
                         String[] parts = pip.substring(1, pip.length() - 1).split("/");
                         final StringBuilder rem = new StringBuilder();
-                        rem.append(pip).append(" can be paid with {").append(parts[1]).append("}");
+                        rem.append(pip).append(" can be paid with {").append(parts[0]).append("}");
                         if (parts.length > 2) {
-                            rem.append(", {").append(parts[2]).append("},");
+                            rem.append(", {").append(parts[1]).append("},");
                         }
                         rem.append(" or 2 life. ");
                         if (mc.getPhyrexianCount() > 1) {
@@ -2404,9 +2501,9 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
                     final String[] k = keyword.split(":");
                     final String[] s = (k[0]).split(" ");
                     final String t = s[1];
-                    sbLong.append(k[0]).append(" ").append(k[1]).append(" (As this enters the battlefield, you may ");
-                    sbLong.append("sacrifice any number of ").append(t).append("s. This creature enters the ");
-                    sbLong.append("battlefield with that many +1/+1 counters on it.)");
+                    sbLong.append(k[0]).append(" ").append(k[1]).append(" (As this enters, you may ");
+                    sbLong.append("sacrifice any number of ").append(t).append("s. This creature enters ");
+                    sbLong.append("with that many +1/+1 counters on it.)");
                 } else if (keyword.startsWith("Prototype")) {
                     final String[] k = keyword.split(":");
                     final Cost cost = new Cost(k[1], false);
@@ -2439,8 +2536,9 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
                     sbLong.append(" (").append(inst.getReminderText()).append(")");
                 } else if (keyword.equals("Gift")) {
                     sbLong.append(keyword);
-                    if (inst.getHostCard() != null && inst.getHostCard().getFirstSpellAbility().hasAdditionalAbility("GiftAbility")) {
-                        sbLong.append(" ").append(inst.getHostCard().getFirstSpellAbility().getAdditionalAbility("GiftAbility").getParam("GiftDescription"));
+                    Trigger trig = inst.getTriggers().stream().findFirst().orElse(null);
+                    if (trig != null && trig.getCardState().getFirstSpellAbility().hasAdditionalAbility("GiftAbility")) {
+                        sbLong.append(" ").append(trig.getCardState().getFirstSpellAbility().getAdditionalAbility("GiftAbility").getParam("GiftDescription"));
                     }
                     sbLong.append("\r\n");
                 } else if (keyword.startsWith("Starting intensity")) {
@@ -2454,6 +2552,10 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
                         sb.append("exile it haunting target creature.");
                     }
                     sb.append(")");
+                } else if (keyword.startsWith("Bands with other")) {
+                    final String[] k = keyword.split(":");
+                    String desc = k.length > 2 ? k[2] : CardType.getPluralType(k[1]);
+                    sbLong.append(k[0]).append(" ").append(desc).append(" (").append(inst.getReminderText()).append(")");
                 } else if (keyword.equals("Convoke") || keyword.equals("Dethrone")|| keyword.equals("Fear")
                          || keyword.equals("Melee") || keyword.equals("Improvise")|| keyword.equals("Shroud")
                          || keyword.equals("Banding") || keyword.equals("Intimidate")|| keyword.equals("Evolve")
@@ -2588,7 +2690,7 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
                 Breadcrumb bread = new Breadcrumb(msg);
                 bread.setData("Card", this.getName());
                 bread.setData("Keyword", keyword);
-                Sentry.addBreadcrumb(bread, this);
+                Sentry.addBreadcrumb(bread);
 
                 throw new RuntimeException("Error in Card " + this.getName() + " with Keyword " + keyword, e);
             }
@@ -2603,7 +2705,7 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
             sbLong.append("\r\n");
         }
         sb.append(sbLong);
-        return CardTranslation.translateMultipleDescriptionText(sb.toString(), getName());
+        return CardTranslation.translateMultipleDescriptionText(sb.toString(), this);
     }
 
     private String kickerDesc(String keyword, String remText) {
@@ -2759,7 +2861,7 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
                 String text = replacementEffect.getDescription();
                 // Get original description since text might be translated
                 if (replacementEffect.hasParam("Description") &&
-                        replacementEffect.getParam("Description").contains("enters the battlefield")) {
+                        replacementEffect.getParam("Description").contains("enters")) {
                     sb.append(text).append(linebreak);
                 } else {
                     replacementEffects.append(text).append(linebreak);
@@ -2772,7 +2874,7 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
             // only show this info if this card does not has the meld Effect itself
 
             boolean hasMeldEffect = hasSVar("Meld")
-                    || Iterables.any(state.getNonManaAbilities(), SpellAbilityPredicates.isApi(ApiType.Meld));
+                    || state.getNonManaAbilities().anyMatch(SpellAbilityPredicates.isApi(ApiType.Meld));
             String meld = this.getRules().getMeldWith();
             if (meld != "" && !hasMeldEffect) {
                 sb.append("\r\n");
@@ -2810,7 +2912,7 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
         for (final StaticAbility stAb : state.getStaticAbilities()) {
             if (!stAb.isSecondary() && !stAb.isClassAbility()) {
                 final String stAbD = stAb.toString();
-                if (!stAbD.equals("")) {
+                if (!stAbD.isEmpty()) {
                     boolean disabled = getGame() != null && getController() != null && game.getAge() != GameStage.Play && !stAb.checkConditions();
                     if (disabled) sb.append(grayTag);
                     sb.append(stAbD);
@@ -3074,18 +3176,23 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
                 } else if (keyword.startsWith("Entwine") || keyword.startsWith("Madness")
                         || keyword.startsWith("Miracle") || keyword.startsWith("Recover")
                         || keyword.startsWith("Escape") || keyword.startsWith("Foretell:")
-                        || keyword.startsWith("Disturb") || keyword.startsWith("Overload") 
+                        || keyword.startsWith("Disturb") || keyword.startsWith("Overload")
                         || keyword.startsWith("Plot")) {
                     final String[] k = keyword.split(":");
-                    final Cost cost = new Cost(k[1], false);
+                    final Cost mCost;
+                    if ("ManaCost".equals(k[1])) {
+                        mCost = new Cost(getManaCost(), false);
+                    } else {
+                        mCost = new Cost(k[1], false);
+                    }
 
                     StringBuilder sbCost = new StringBuilder(k[0]);
-                    if (!cost.isOnlyManaCost()) {
+                    if (!mCost.isOnlyManaCost()) {
                         sbCost.append("—");
                     } else {
                         sbCost.append(" ");
                     }
-                    sbCost.append(cost.toSimpleString());
+                    sbCost.append(mCost.toSimpleString());
                     sbAfter.append(sbCost).append(" (").append(inst.getReminderText()).append(")");
                     sbAfter.append("\r\n");
                 } else if (keyword.equals("Gift")) {
@@ -3159,13 +3266,13 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
                 Breadcrumb bread = new Breadcrumb(msg);
                 bread.setData("Card", this.getName());
                 bread.setData("Keyword", keyword);
-                Sentry.addBreadcrumb(bread, this);
+                Sentry.addBreadcrumb(bread);
 
                 throw new RuntimeException("Error in Card " + this.getName() + " with Keyword " + keyword, e);
             }
         }
 
-        sb.append(CardTranslation.translateMultipleDescriptionText(sbBefore.toString(), state.getName()));
+        sb.append(CardTranslation.translateMultipleDescriptionText(sbBefore.toString(), state));
 
         // add Spells there to main StringBuilder
         sb.append(strSpell);
@@ -3188,13 +3295,13 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
         for (final StaticAbility stAb : state.getStaticAbilities()) {
             if (!stAb.isSecondary()) {
                 final String stAbD = stAb.toString();
-                if (!stAbD.equals("")) {
+                if (!stAbD.isEmpty()) {
                     sb.append(stAbD).append("\r\n");
                 }
             }
         }
 
-        sb.append(CardTranslation.translateMultipleDescriptionText(sbAfter.toString(), state.getName()));
+        sb.append(CardTranslation.translateMultipleDescriptionText(sbAfter.toString(), state));
         return sb;
     }
 
@@ -3343,9 +3450,7 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
             if (ck.isRemoveNonMana()) {
                 // List only has nonMana
                 if (null == mana) {
-                    List<SpellAbility> toRemove = Lists.newArrayList(
-                            Iterables.filter(list, Predicates.not(SpellAbilityPredicates.isManaAbility())));
-                    list.removeAll(toRemove);
+                    list.removeIf(SpellAbilityPredicates.isManaAbility().negate());
                 } else if (false == mana) {
                     list.clear();
                 }
@@ -3482,21 +3587,6 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
         return !StaticAbilityCantRegenerate.cantRegenerate(this);
     }
 
-    // is this "Card" supposed to be a token?
-    public final boolean isToken() {
-        if (isInPlay() && hasMergedCard()) {
-            return getTopMergedCard().token;
-        }
-        return token;
-    }
-    public final boolean isRealToken() {
-        return token;
-    }
-    public final void setToken(boolean token0) {
-        if (token == token0) { return; }
-        token = token0;
-        view.updateToken(this);
-    }
     public final void updateTokenView() {
         view.updateToken(this);
     }
@@ -3513,6 +3603,22 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
         view.updateTokenCard(this);
     }
 
+    public final void setCollectible(boolean collectible) {
+        this.collectible = collectible;
+    }
+    /**
+     * Indicates whether this is a card in a player's collection that can be lost to an ante,
+     * given away, ripped up, or is subject to any other effects beyond the scope of the match.
+     * <p>
+     * For cards that began in a player's deck, this is usually true. For tokens, cards that
+     * are conjured, and game pieces that do not require ownership of a matching card (e.g.
+     * sticker sheets and dungeons), this is usually false.
+     * @return true if this card is part of its owner's collection.
+     */
+    public final boolean isCollectible() {
+        return this.collectible;
+    }
+
     public void updateWasDestroyed(boolean value) {
         view.updateWasDestroyed(value);
     }
@@ -3523,18 +3629,13 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
     public final void setCopiedPermanent(final Card c) {
         if (copiedPermanent == c) { return; }
         copiedPermanent = c;
-        if(c != null)
+        if(c != null) {
             currentState.setOracleText(c.getOracleText());
+            currentState.setFunctionalVariantName(c.getCurrentState().getFunctionalVariantName());
+        }
         //Could fetch the card rules oracle text in an "else" clause here,
         //but CardRules isn't aware of the card's state. May be better to
         //just stash the original oracle text if this comes up.
-    }
-
-    public final boolean isCopiedSpell() {
-        return copiedSpell;
-    }
-    public final void setCopiedSpell(final boolean b) {
-        copiedSpell = b;
     }
 
     public final boolean isFaceDown() {
@@ -3658,6 +3759,12 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
     }
     public void setBecameTargetThisTurn(boolean becameTargetThisTurn0) {
         becameTargetThisTurn = becameTargetThisTurn0;
+    }
+    public boolean isValiant() {
+        return valiant;
+    }
+    public void setValiant(boolean v) {
+        valiant = v;
     }
 
     public boolean hasStartedTheTurnUntapped() {
@@ -3840,11 +3947,11 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
     }
 
     public final CardCollectionView getEquippedBy() {
-        return CardLists.filter(getAttachedCards(), CardPredicates.Presets.EQUIPMENT);
+        return CardLists.filter(getAttachedCards(), CardPredicates.EQUIPMENT);
     }
 
     public final boolean isEquipped() {
-        return Iterables.any(getAttachedCards(), CardPredicates.Presets.EQUIPMENT);
+        return getAttachedCards().anyMatch(CardPredicates.EQUIPMENT);
     }
     public final boolean isEquippedBy(Card c) {
         return this.hasCardAttachment(c);
@@ -3854,11 +3961,11 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
     }
 
     public final CardCollectionView getFortifiedBy() {
-        return CardLists.filter(getAttachedCards(), CardPredicates.Presets.FORTIFICATION);
+        return CardLists.filter(getAttachedCards(), CardPredicates.FORTIFICATION);
     }
 
     public final boolean isFortified() {
-        return Iterables.any(getAttachedCards(), CardPredicates.Presets.FORTIFICATION);
+        return getAttachedCards().anyMatch(CardPredicates.FORTIFICATION);
     }
     public final boolean isFortifiedBy(Card c) {
         // 301.5e + 301.6
@@ -3977,6 +4084,9 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
     }
 
     public final void unattachFromEntity(final GameEntity entity) {
+        unattachFromEntity(entity, entity);
+    }
+    public final void unattachFromEntity(final GameEntity entity, GameEntity old) {
         if (entityAttachedTo == null || !entityAttachedTo.equals(entity)) {
             return;
         }
@@ -3993,22 +4103,19 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
 
         getGame().fireEvent(new GameEventCardAttachment(this, entity, null));
 
-        // Run triggers
         final Map<AbilityKey, Object> runParams = AbilityKey.newMap();
         runParams.put(AbilityKey.Attach, this);
-        runParams.put(AbilityKey.Object, entity);
+        runParams.put(AbilityKey.Object, old);
         getGame().getTriggerHandler().runTrigger(TriggerType.Unattach, runParams, false);
+
         runUnattachCommands();
     }
 
     public final boolean isModified() {
-        if (!isCreature()) {
-            return false;
-        }
         if (this.isEquipped() || this.hasCounters()) {
             return true;
         }
-        return Iterables.any(this.getEnchantedBy(), CardPredicates.isController(this.getController()));
+        return this.getEnchantedBy().anyMatch(CardPredicates.isController(this.getController()));
     }
 
     public final void setType(final CardType type0) {
@@ -4031,20 +4138,7 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
     }
 
     public final CardTypeView getType() {
-        return getType(currentState);
-    }
-    public final CardTypeView getType(CardState state) {
-        final Iterable<CardChangedType> changedCardTypes = getChangedCardTypes();
-        if (Iterables.isEmpty(changedCardTypes)) {
-            return state.getType();
-        }
-        // CR 506.4 attacked planeswalkers leave combat
-        boolean checkCombat = state.getType().isPlaneswalker() && game.getCombat() != null && !game.getCombat().getAttackersOf(this).isEmpty();
-        CardTypeView types = state.getType().getTypeWithChanges(changedCardTypes);
-        if (checkCombat && !types.isPlaneswalker()) {
-            game.getCombat().removeFromCombat(this);
-        }
-        return types;
+        return currentState.getTypeWithChanges();
     }
 
     public final CardTypeView getOriginalType() {
@@ -4054,7 +4148,6 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
         return state.getType();
     }
 
-    // TODO add changed type by card text
     public Iterable<CardChangedType> getChangedCardTypes() {
         // If there are no changed types, just return an empty immutable list, which actually
         // produces a surprisingly large speedup by avoid lots of temp objects and making iteration
@@ -4063,19 +4156,12 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
             return ImmutableList.of();
         }
         Iterable<CardChangedType> byText = changedTypeByText == null ? ImmutableList.of() : ImmutableList.of(this.changedTypeByText);
-        return Iterables.unmodifiableIterable(Iterables.concat(
+        return ImmutableList.copyOf(Iterables.concat(
                 changedCardTypesByText.values(), // Layer 3
                 byText, // Layer 3 by Word Changes,
                 changedCardTypesCharacterDefining.values(), // Layer 4
                 changedCardTypes.values() // Layer 6
-                ));
-    }
-
-    public Table<Long, Long, CardChangedType> getChangedCardTypesTable() {
-        return Tables.unmodifiableTable(changedCardTypes);
-    }
-    public Table<Long, Long, CardChangedType> getChangedCardTypesCharacterDefiningTable() {
-        return Tables.unmodifiableTable(changedCardTypesCharacterDefining);
+            ));
     }
 
     public boolean clearChangedCardTypes() {
@@ -4135,12 +4221,6 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
         return changedCardKeywords;
     }
 
-    public Table<Long, Long, CardColor> getChangedCardColorsTable() {
-        return changedCardColors;
-    }
-    public Table<Long, Long, CardColor> getChangedCardColorsCharacterDefiningTable() {
-        return changedCardColorsCharacterDefining;
-    }
     public Iterable<CardColor> getChangedCardColors() {
         return Iterables.concat(changedCardColorsByText.values(), changedCardColorsCharacterDefining.values(), changedCardColors.values());
     }
@@ -4273,7 +4353,6 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
         currentState.setAttractionLights(attractionLights);
     }
 
-
     public final int getBasePower() {
         return currentState.getBasePower();
     }
@@ -4362,7 +4441,7 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
         updateCloneState(true);
     }
 
-    private final void updateCloneState(final boolean updateView) {
+    private void updateCloneState(final boolean updateView) {
         if (isFaceDown()) {
             setState(CardStateName.FaceDown, updateView, true);
         } else {
@@ -4385,7 +4464,7 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
         return CardStateName.Original;
     }
 
-    private final CardCloneStates getLastClonedState() {
+    private CardCloneStates getLastClonedState() {
         if (clonedStates.isEmpty()) {
             return null;
         }
@@ -4567,19 +4646,13 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
         return StaticAbilityCombatDamageToughness.combatDamageToughness(this);
     }
 
-    // How much combat damage does the card deal
-    public final StatBreakdown getNetCombatDamageBreakdown() {
-        if (hasKeyword("CARDNAME assigns no combat damage")) {
-            return new StatBreakdown();
-        }
-
-        if (toughnessAssignsDamage()) {
-            return getNetToughnessBreakdown();
-        }
-        return getNetPowerBreakdown();
+    public final boolean assignNoCombatDamage() {
+        return StaticAbilityAssignNoCombatDamage.assignNoCombatDamage(this);
     }
+
+    // How much combat damage does the card deal
     public final int getNetCombatDamage() {
-        return getNetCombatDamageBreakdown().getTotal();
+        return assignNoCombatDamage() ? 0 : (toughnessAssignsDamage() ? getNetToughnessBreakdown() : getNetPowerBreakdown()).getTotal();
     }
 
     private int intensity = 0;
@@ -4622,7 +4695,7 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
         } else if (category.equals("Keywords")) {
             boolean removeAll = p.containsKey("RemoveAll") && (boolean) p.get("RemoveAll") == true;
             addChangedCardKeywords((List<String>) p.get("AddKeywords"), Lists.newArrayList(), removeAll,
-                (long) p.get("Timestamp"), (long) 0);
+                (long) p.get("Timestamp"), null);
         } else if (category.equals("Types")) {
             addChangedCardTypes((CardType) p.get("AddTypes"), (CardType) p.get("RemoveTypes"),
                 false, (Set<RemoveType>) p.get("RemoveXTypes"),
@@ -4665,11 +4738,9 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
         }
     }
 
-    private int multiKickerMagnitude = 0;
-    public final void setKickerMagnitude(final int n) { multiKickerMagnitude = n; }
     public final int getKickerMagnitude() {
-        if (multiKickerMagnitude > 0) {
-            return multiKickerMagnitude;
+        if (this.getCastSA() != null && getCastSA().hasOptionalKeywordAmount(Keyword.MULTIKICKER)) {
+            return getCastSA().getOptionalKeywordAmount(Keyword.MULTIKICKER);
         }
         boolean hasK1 = isOptionalCostPaid(OptionalCost.Kicker1);
         return hasK1 == isOptionalCostPaid(OptionalCost.Kicker2) ? (hasK1 ? 2 : 0) : 1;
@@ -4734,9 +4805,7 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
         // Check replacement effects
         Map<AbilityKey, Object> repParams = AbilityKey.mapFromAffected(this);
         repParams.put(AbilityKey.IsCombat, attacker); // right name for parameter?
-        List<ReplacementEffect> list = getGame().getReplacementHandler().getReplacementList(ReplacementType.Tap, repParams, ReplacementLayer.CantHappen);
-
-        return list.isEmpty();
+        return !getGame().getReplacementHandler().cantHappenCheck(ReplacementType.Tap, repParams);
     }
 
     public final boolean tap(boolean tapAnimation, SpellAbility cause, Player tapper) {
@@ -4758,7 +4827,6 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
             return false;
         }
 
-        // Run triggers
         final Map<AbilityKey, Object> runParams = AbilityKey.mapFromCard(this);
         runParams.put(AbilityKey.Attacker, attacker);
         runParams.put(AbilityKey.Cause, cause);
@@ -4774,12 +4842,10 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
     public final boolean untap(boolean untapAnimation) {
         if (!tapped) { return false; }
 
-        // Run Replacement effects
         if (getGame().getReplacementHandler().run(ReplacementType.Untap, AbilityKey.mapFromAffected(this)) != ReplacementResult.NotReplaced) {
             return false;
         }
 
-        // Run triggers
         getGame().getTriggerHandler().runTrigger(TriggerType.Untaps, AbilityKey.mapFromCard(this), false);
 
         runUntapCommands();
@@ -4932,7 +4998,7 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
         KeywordInterface result = storedKeywordByText.get(triple);
         if (result == null) {
             result = ki.copy(this, false);
-            result.setStaticId(stAb.getId());
+            result.setStatic(stAb);
             result.setIdx(idx);
             result.setIntrinsic(true);
             storedKeywordByText.put(triple, result);
@@ -5055,11 +5121,11 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
     }
 
     public final void addChangedCardKeywords(final List<String> keywords, final List<String> removeKeywords,
-            final boolean removeAllKeywords, final long timestamp, final long staticId) {
-        addChangedCardKeywords(keywords, removeKeywords, removeAllKeywords, timestamp, staticId, true);
+            final boolean removeAllKeywords, final long timestamp, final StaticAbility st) {
+        addChangedCardKeywords(keywords, removeKeywords, removeAllKeywords, timestamp, st, true);
     }
     public final void addChangedCardKeywords(final List<String> keywords, final List<String> removeKeywords,
-            final boolean removeAllKeywords, final long timestamp, final long staticId, final boolean updateView) {
+            final boolean removeAllKeywords, final long timestamp, final StaticAbility st, final boolean updateView) {
         List<KeywordInterface> kws = Lists.newArrayList();
         if (keywords != null) {
             long idx = 1;
@@ -5073,14 +5139,14 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
                     }
                 }
                 if (canHave) {
-                    kws.add(getKeywordForStaticAbility(kw, staticId, idx));
+                    kws.add(getKeywordForStaticAbility(kw, st, idx));
                 }
                 idx++;
             }
         }
 
         final KeywordsChange newCks = new KeywordsChange(kws, removeKeywords, removeAllKeywords);
-        changedCardKeywords.put(timestamp, staticId, newCks);
+        changedCardKeywords.put(timestamp, st == null ? 0l : st.getId(), newCks);
 
         if (updateView) {
             updateKeywords();
@@ -5089,12 +5155,13 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
         }
     }
 
-    public final KeywordInterface getKeywordForStaticAbility(String kw, final long staticId, final long idx) {
+    public final KeywordInterface getKeywordForStaticAbility(String kw, final StaticAbility st, final long idx) {
         KeywordInterface result;
+        long staticId = st == null ? 0 : st.getId();
         Triple<String, Long, Long> triple = Triple.of(kw, staticId, idx);
         if (staticId < 1 || !storedKeywords.containsKey(triple)) {
             result = Keyword.getInstance(kw);
-            result.setStaticId(staticId);
+            result.setStatic(st);
             result.setIdx(idx);
             result.createTraits(this, false);
             if (staticId > 0) {
@@ -5107,8 +5174,8 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
     }
 
     public final void addKeywordForStaticAbility(KeywordInterface kw) {
-        if (kw.getStaticId() > 0) {
-            storedKeywords.put(Triple.of(kw.getOriginal(), kw.getStaticId(), kw.getIdx()), kw);
+        if (kw.getStatic() != null) {
+            storedKeywords.put(Triple.of(kw.getOriginal(), (long)kw.getStatic().getId(), kw.getIdx()), kw);
         }
     }
 
@@ -5123,7 +5190,7 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
         }
     }
 
-    private final KeywordInterface getCopyForStoredKeyword(Map.Entry<Triple<String, Long, Long>, KeywordInterface> e, boolean lki) {
+    private KeywordInterface getCopyForStoredKeyword(Map.Entry<Triple<String, Long, Long>, KeywordInterface> e, boolean lki) {
         // for performance check if we already copied this
         if (lki) {
             for (KeywordsChange kc : changedCardKeywords.column(e.getKey().getMiddle()).values()) {
@@ -5153,8 +5220,9 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
     public final void addChangedCardKeywordsInternal(
         final Collection<KeywordInterface> keywords, final Collection<KeywordInterface> removeKeywords,
         final boolean removeAllKeywords,
-        final long timestamp, final long staticId, final boolean updateView) {
+        final long timestamp, final StaticAbility st, final boolean updateView) {
         final KeywordsChange newCks = new KeywordsChange(keywords, removeKeywords, removeAllKeywords);
+        long staticId = st == null ? 0 : st.getId();
         changedCardKeywords.put(timestamp, staticId, newCks);
 
         if (updateView) {
@@ -5504,6 +5572,8 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
         return isInstant() || isSorcery() || (isAura() && !isInZone(ZoneType.Battlefield));
     }
 
+    public final boolean hasPlayableLandFace() { return isLand() || (isModal() && getState(CardStateName.Modal).getType().isLand()); }
+
     public final boolean isLand()       { return getType().isLand(); }
     public final boolean isBasicLand()  { return getType().isBasicLand(); }
     public final boolean isSnow()       { return getType().isSnow(); }
@@ -5511,6 +5581,7 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
     public final boolean isKindred()     { return getType().isKindred(); }
     public final boolean isSorcery()    { return getType().isSorcery(); }
     public final boolean isInstant()    { return getType().isInstant(); }
+    public final boolean isInstantOrSorcery() {return getType().isInstant() || getType().isSorcery();}
 
     public final boolean isCreature()   { return getType().isCreature(); }
     public final boolean isArtifact()   { return getType().isArtifact(); }
@@ -5534,6 +5605,8 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
     public final boolean isPlane()      { return getType().isPlane(); }
 
     public final boolean isOutlaw()     { return getType().isOutlaw(); }
+
+    public final boolean isRoom()       { return getType().hasSubtype("Room"); }
 
     /** {@inheritDoc} */
     @Override
@@ -5668,7 +5741,7 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
 
             // Just phased in, time to run the phased in trigger
             getGame().getTriggerHandler().registerActiveTrigger(this, false);
-            getGame().getTriggerHandler().runTrigger(TriggerType.PhaseIn, runParams, false);
+            getGame().getTriggerHandler().runTrigger(TriggerType.PhaseIn, runParams, true);
         }
 
         game.updateLastStateForCard(this);
@@ -5788,9 +5861,15 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
             if (StringUtils.isNumeric(s)) {
                count += Integer.parseInt(s);
             } else {
-                String svar = StringUtils.join(parse);
-                if (state.hasSVar(svar)) {
-                    count += AbilityUtils.calculateAmount(this, state.getSVar(svar), null);
+                StaticAbility st = inst.getStatic();
+                // TODO make keywordinterface inherit from CardTrait somehow, or invent new interface
+                if (st != null && st.hasSVar(s)) {
+                    count += AbilityUtils.calculateAmount(this, st.getSVar(s), null);
+                } else {
+                    String svar = StringUtils.join(parse);
+                    if (state.hasSVar(svar)) {
+                        count += AbilityUtils.calculateAmount(this, state.getSVar(svar), null);
+                    }
                 }
             }
         }
@@ -5868,14 +5947,6 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
         return CardProperty.cardHasProperty(this, property, sourceController, source, spellAbility);
     }
 
-    public final boolean isImmutable() {
-        return isImmutable;
-    }
-    public final void setImmutable(final boolean isImmutable0) {
-        isImmutable = isImmutable0;
-        view.updateImmutable(this);
-    }
-
     public final boolean isEmblem() {
         return isEmblem;
     }
@@ -5890,16 +5961,6 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
     public final void setBoon(final boolean isBoon0) {
         isBoon = isBoon0;
         view.updateBoon(this);
-    }
-
-    /**
-     * @return true if this is physically an Attraction card with an Astrotorium card back. False otherwise.
-     */
-    public final boolean isAttractionCard() {
-        return this.isAttractionCard;
-    }
-    public final void setAttractionCard(boolean isAttractionCard) {
-        this.isAttractionCard = isAttractionCard;
     }
 
     /*
@@ -5957,9 +6018,21 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
         boolean shares = getName(true).equals(name);
 
         // Split cards has extra logic to check if it does share a name with
-        if (isSplitCard()) {
-            shares |= name.equals(getState(CardStateName.LeftSplit).getName());
-            shares |= name.equals(getState(CardStateName.RightSplit).getName());
+        if (!shares && !hasNameOverwrite()) {
+            if (isInPlay()) {
+               // split cards in play are only rooms
+               for (String door : getUnlockedRoomNames()) {
+                   shares |= name.equals(door);
+               }
+            } else { // not on the battlefield
+                if (hasState(CardStateName.LeftSplit)) {
+                    shares |= name.equals(getState(CardStateName.LeftSplit).getName());
+                }
+                if (hasState(CardStateName.RightSplit)) {
+                    shares |= name.equals(getState(CardStateName.RightSplit).getName());
+                }
+            }
+            // TODO does it need extra check for stack?
         }
 
         if (!shares && hasNonLegendaryCreatureNames()) {
@@ -6026,6 +6099,13 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
             return false;
         }
         return getType().sharesCardTypeWith(c1.getType());
+    }
+
+    public final boolean sharesAllCardTypesWith(final Card c1) {
+        if (c1 == null) {
+            return false;
+        }
+        return getType().sharesAllCardTypesWith(c1.getType());
     }
 
     public final boolean sharesControllerWith(final Card c1) {
@@ -6154,7 +6234,7 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
     public final void setExcessDamageReceivedThisTurn(final int n) {
         excessDamageThisTurnAmount = n;
     }
-    private final void resetExcessDamage() {
+    private void resetExcessDamage() {
         hasBeenDealtExcessDamageThisTurn = false;
         excessDamageThisTurnAmount = 0;
     }
@@ -6350,10 +6430,17 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
     }
 
     public final String getImageKey() {
-        return getCardForUi().currentState.getImageKey();
+        Card uiCard = getCardForUi();
+        if(uiCard == null)
+            return "";
+        return uiCard.currentState.getImageKey();
     }
     public final void setImageKey(final String iFN) {
-        getCardForUi().currentState.setImageKey(iFN);
+        Card uiCard = getCardForUi();
+        if(uiCard == null)
+            this.currentState.setImageKey(iFN); //Shouldn't really matter; the card isn't supposed to show in the UI anyway.
+        else
+            uiCard.currentState.setImageKey(iFN);
     }
     public final void setImageKey(final IPaperCard ipc, final CardStateName stateName) {
         if (ipc == null)
@@ -6380,7 +6467,10 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
     }
 
     public String getImageKey(CardStateName state) {
-        CardState c = getCardForUi().states.get(state);
+        Card uiCard = getCardForUi();
+        if(uiCard == null)
+            return "";
+        CardState c = uiCard.states.get(state);
         return (c != null ? c.getImageKey() : "");
     }
 
@@ -6543,7 +6633,7 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
             suspectedTimestamp = getGame().getNextTimestamp();
 
             // use this for CantHaveKeyword
-            addChangedCardKeywords(ImmutableList.of("Menace"), ImmutableList.<String>of(), false, suspectedTimestamp, 0, true);
+            addChangedCardKeywords(ImmutableList.of("Menace"), ImmutableList.<String>of(), false, suspectedTimestamp, null, true);
 
             if (suspectedStatic == null) {
                 String effect = "Mode$ CantBlockBy | ValidBlocker$ Creature.Self | Description$ CARDNAME can't block.";
@@ -6597,7 +6687,7 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
         if (plotted == true && !isLKI()) {
             final Map<AbilityKey, Object> runParams = AbilityKey.mapFromCard(this);
             game.getTriggerHandler().runTrigger(TriggerType.BecomesPlotted, runParams, false);
-        }    
+        }
         return true;
     }
 
@@ -6694,7 +6784,7 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
                 new CardType(Collections.singletonList("Creature"), true),
                 false, EnumSet.of(RemoveType.EnchantmentTypes), bestowTimestamp, 0, updateView, false);
         addChangedCardKeywords(Collections.singletonList("Enchant creature"), Lists.newArrayList(),
-                false, bestowTimestamp, 0, updateView);
+                false, bestowTimestamp, null, updateView);
     }
 
     public final void unanimateBestow() {
@@ -7167,6 +7257,7 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
         setRegeneratedThisTurn(0);
         resetShieldCount();
         setBecameTargetThisTurn(false);
+        setValiant(false);
         setFoughtThisTurn(false);
         turnedFaceUpThisTurn = false;
         clearMustBlockCards();
@@ -7231,9 +7322,6 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
         return getCMC(SplitCMCMode.CurrentSideCMC);
     }
     public int getCMC(SplitCMCMode mode) {
-        if (isToken() && getCopiedPermanent() == null) {
-            return 0;
-        }
         if (lkiCMC >= 0) {
             return lkiCMC; // a workaround used by getLKICopy
         }
@@ -7264,8 +7352,15 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
             }
         } else if (currentStateName == CardStateName.Transformed) {
             // Except in the cases were we clone the back-side of a DFC.
+            if (getCopiedPermanent() != null) {
+                return 0;
+            }
             requestedCMC = getState(CardStateName.Original).getManaCost().getCMC();
         } else if (currentStateName == CardStateName.Meld) {
+            // to follow the rules (but we shouldn't get here while cloned)
+            if (getCopiedPermanent() != null) {
+                return 0;
+            }
             // Melded creatures have a combined CMC of each of their parts
             requestedCMC = getState(CardStateName.Original).getManaCost().getCMC() + this.getMeldedWith().getManaCost().getCMC();
         } else {
@@ -7424,10 +7519,19 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
             for (SpellAbility sa : getState(CardStateName.Modal).getSpellAbilities()) {
                 //add alternative costs as additional spell abilities
                 // only add Spells there
-                if (sa.isSpell()) {
+                if (sa.isSpell() || sa.isLandAbility()) {
                     abilities.add(sa);
                     abilities.addAll(GameActionUtil.getAlternativeCosts(sa, player, false));
                 }
+            }
+        }
+
+        if (isInPlay() && !isPhasedOut() && player.canCastSorcery()) {
+            if (getCurrentStateName() == CardStateName.RightSplit || getCurrentStateName() == CardStateName.EmptyRoom) {
+                abilities.add(getUnlockAbility(CardStateName.LeftSplit));
+            }
+            if (getCurrentStateName() == CardStateName.LeftSplit || getCurrentStateName() == CardStateName.EmptyRoom) {
+                abilities.add(getUnlockAbility(CardStateName.RightSplit));
             }
         }
 
@@ -7459,106 +7563,6 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
             }
         }
         abilities.removeAll(toRemove);
-
-        // Land Abilities below, move them to CardFactory after MayPlayRefactor
-        if (getLastKnownZone().is(ZoneType.Battlefield)) {
-            return abilities;
-        }
-        if (getState(CardStateName.Original).getType().isLand()) {
-            LandAbility la = new LandAbility(this, player, null);
-            la.setCardState(oState);
-            if (la.canPlay()) {
-                abilities.add(la);
-            }
-
-            Card source = this;
-            boolean lkicheck = false;
-
-            // if Card is Facedown, need to check if MayPlay still applies
-            if (isFaceDown()) {
-                lkicheck = true;
-                source = CardCopyService.getLKICopy(source);
-                source.forceTurnFaceUp();
-            }
-
-            if (lkicheck) {
-                // double freeze tracker, so it doesn't update view
-                game.getTracker().freeze();
-                CardCollection preList = new CardCollection(source);
-                game.getAction().checkStaticAbilities(false, Sets.newHashSet(source), preList);
-            }
-
-            // extra for MayPlay
-            for (CardPlayOption o : source.mayPlay(player)) {
-                la = new LandAbility(this, player, o);
-                la.setCardState(oState);
-                if (la.canPlay()) {
-                    abilities.add(la);
-                }
-            }
-
-            // reset static abilities
-            if (lkicheck) {
-                game.getAction().checkStaticAbilities(false);
-                // clear delayed changes, this check should not have updated the view
-                game.getTracker().clearDelayed();
-                // need to unfreeze tracker
-                game.getTracker().unfreeze();
-            }
-        }
-
-        if (isModal() && hasState(CardStateName.Modal)) {
-            CardState modal = getState(CardStateName.Modal);
-            if (modal.getType().isLand()) {
-                LandAbility la = new LandAbility(this, player, null);
-                la.setCardState(modal);
-
-                Card source = CardCopyService.getLKICopy(this);
-                boolean lkicheck = true;
-
-                // if Card is Facedown, need to check if MayPlay still applies
-                if (isFaceDown()) {
-                    source.forceTurnFaceUp();
-                }
-
-                // the modal state is not copied with lki, need to copy it extra
-                if (!source.hasState(CardStateName.Modal)) {
-                    source.addAlternateState(CardStateName.Modal, false);
-                    source.getState(CardStateName.Modal).copyFrom(this.getState(CardStateName.Modal), true);
-                }
-
-                source.setSplitStateToPlayAbility(la);
-
-                if (la.canPlay(source)) {
-                    abilities.add(la);
-                }
-
-                if (lkicheck) {
-                    // double freeze tracker, so it doesn't update view
-                    game.getTracker().freeze();
-                    CardCollection preList = new CardCollection(source);
-                    game.getAction().checkStaticAbilities(false, Sets.newHashSet(source), preList);
-                }
-
-                // extra for MayPlay
-                for (CardPlayOption o : source.mayPlay(player)) {
-                    la = new LandAbility(this, player, o);
-                    la.setCardState(modal);
-                    if (la.canPlay(source)) {
-                        abilities.add(la);
-                    }
-                }
-
-                // reset static abilities
-                if (lkicheck) {
-                    game.getAction().checkStaticAbilities(false);
-                    // clear delayed changes, this check should not have updated the view
-                    game.getTracker().clearDelayed();
-                    // need to unfreeze tracker
-                    game.getTracker().unfreeze();
-                }
-            }
-        }
 
         return abilities;
     }
@@ -7653,6 +7657,23 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
     }
 
     @Override
+    public String getTranslationKey() {
+        return currentState.getTranslationKey();
+    }
+    @Override
+    public String getUntranslatedName() {
+        return this.getName();
+    }
+    @Override
+    public String getUntranslatedType() {
+        return currentState.getUntranslatedType();
+    }
+    @Override
+    public String getUntranslatedOracle() {
+        return currentState.getUntranslatedOracle();
+    }
+
+    @Override
     public CardView getView() {
         return view;
     }
@@ -7719,29 +7740,11 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
         }
     }
 
-    public void setChangedCardTypes(Table<Long, Long, CardChangedType> changedCardTypes) {
-        this.changedCardTypes.clear();
-        this.changedCardTypes.putAll(changedCardTypes);
-    }
-    public void setChangedCardTypesCharacterDefining(Table<Long, Long, CardChangedType> changedCardTypes) {
-        this.changedCardTypesCharacterDefining.clear();
-        this.changedCardTypesCharacterDefining.putAll(changedCardTypes);
-    }
-
     public void setChangedCardKeywords(Table<Long, Long, KeywordsChange> changedCardKeywords) {
         this.changedCardKeywords.clear();
         for (Table.Cell<Long, Long, KeywordsChange> entry : changedCardKeywords.cellSet()) {
             this.changedCardKeywords.put(entry.getRowKey(), entry.getColumnKey(), entry.getValue().copy(this, true));
         }
-    }
-
-    public void setChangedCardColors(Table<Long, Long, CardColor> changedCardColors) {
-        this.changedCardColors.clear();
-        this.changedCardColors.putAll(changedCardColors);
-    }
-    public void setChangedCardColorsCharacterDefining(Table<Long, Long, CardColor> changedCardColors) {
-        this.changedCardColorsCharacterDefining.clear();
-        this.changedCardColorsCharacterDefining.putAll(changedCardColors);
     }
 
     public void cleanupCopiedChangesFrom(Card c) {
@@ -7751,12 +7754,6 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
             this.removeChangedCardKeywords(c.getLayerTimestamp(), stAb.getId(), false);
             this.removeChangedCardTraits(c.getLayerTimestamp(), stAb.getId());
         }
-    }
-
-    public void forceTurnFaceUp() {
-        getGame().getTriggerHandler().suppressMode(TriggerType.TurnFaceUp);
-        turnFaceUp(false, null);
-        getGame().getTriggerHandler().clearSuppression(TriggerType.TurnFaceUp);
     }
 
     public final void addGoad(Long timestamp, final Player p) {
@@ -7812,33 +7809,17 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
         this.savedLastKnownZone = zone;
     }
 
-    /**
-     * ETBCounters are only used between replacementEffects
-     * and when the Card really enters the Battlefield with the counters
-     * @return map of counters
-     */
-    public final void addEtbCounter(CounterType type, Integer val, final Player source) {
-        int old = etbCounters.contains(source, type) ? etbCounters.get(source, type) : 0;
-        etbCounters.put(source, type, old + val);
-    }
-
-    public final void clearEtbCounters() {
-        etbCounters.clear();
-    }
-
-    public final Table<Player, CounterType, Integer> getEtbCounters() {
-        return etbCounters;
-    }
-
-    public final void putEtbCounters(GameEntityCounterTable table) {
-        for (Table.Cell<Player, CounterType, Integer> e : etbCounters.cellSet()) {
-            CounterType ct = e.getColumnKey();
-            if (this.isLKI()) {
+    public final void putEtbCounters(Map<Optional<Player>, Map<CounterType, Integer>> etbCounters) {
+        if (etbCounters == null) {
+            return;
+        }
+        // used for LKI
+        for (Map<CounterType, Integer> m : etbCounters.values()) {
+            for (Map.Entry<CounterType, Integer> e : m.entrySet()) {
+            CounterType ct = e.getKey();
                 if (canReceiveCounters(ct)) {
                     setCounters(ct, getCounters(ct) + e.getValue());
                 }
-            } else {
-                addCounter(ct, e.getValue(), e.getRowKey(), table);
             }
         }
     }
@@ -7967,26 +7948,14 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
                 }
             }
         } else {
-            List<String> result = chosenModesTurn.get(original);
-            if (result == null) {
-                result = Lists.newArrayList();
-                chosenModesTurn.put(original, result);
-            }
+            List<String> result = chosenModesTurn.computeIfAbsent(original, k -> Lists.newArrayList());
             result.add(mode);
 
-            result = chosenModesGame.get(original);
-            if (result == null) {
-                result = Lists.newArrayList();
-                chosenModesGame.put(original, result);
-            }
+            result = chosenModesGame.computeIfAbsent(original, k -> Lists.newArrayList());
             result.add(mode);
 
             if (yourCombat) {
-                result = chosenModesYourCombat.get(original);
-                if (result == null) {
-                    result = Lists.newArrayList();
-                    chosenModesYourCombat.put(original, result);
-                }
+                result = chosenModesYourCombat.computeIfAbsent(original, k -> Lists.newArrayList());
                 result.add(mode);
             }
         }
@@ -8075,8 +8044,6 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
         updateState |= clearNewPT();
         updateState |= clearChangedName();
 
-        clearEtbCounters();
-
         return updateState;
     }
 
@@ -8150,5 +8117,122 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars {
             return true;
         }
         return StaticAbilityWitherDamage.isWitherDamage(this);
+    }
+
+    public Set<CardStateName> getUnlockedRooms() {
+        return this.unlockedRooms;
+    }
+    public void setUnlockedRooms(Set<CardStateName> set) {
+        this.unlockedRooms = set;
+    }
+
+    public List<String> getUnlockedRoomNames() {
+        List<String> result = Lists.newArrayList();
+        for (CardStateName stateName : unlockedRooms) {
+            if (this.hasState(stateName)) {
+                result.add(this.getState(stateName).getName());
+            }
+        }
+        return result;
+    }
+
+    public Set<CardStateName> getLockedRooms() {
+        Set<CardStateName> result = Sets.newHashSet(CardStateName.LeftSplit, CardStateName.RightSplit);
+        result.removeAll(this.unlockedRooms);
+        return result;
+    }
+
+    public List<String> getLockedRoomNames() {
+        List<String> result = Lists.newArrayList();
+        for (CardStateName stateName : getLockedRooms()) {
+            if (this.hasState(stateName)) {
+                result.add(this.getState(stateName).getName());
+            }
+        }
+        return result;
+    }
+
+    public boolean unlockRoom(Player p, CardStateName stateName) {
+        if (unlockedRooms.contains(stateName) || (stateName != CardStateName.LeftSplit && stateName != CardStateName.RightSplit)) {
+            return false;
+        }
+        unlockedRooms.add(stateName);
+
+        updateRooms();
+
+        Map<AbilityKey, Object> unlockParams =  AbilityKey.mapFromPlayer(p);
+        unlockParams.put(AbilityKey.Card, this);
+        unlockParams.put(AbilityKey.CardState, getState(stateName));
+        getGame().getTriggerHandler().runTrigger(TriggerType.UnlockDoor, unlockParams, true);
+
+        // fully unlock
+        if (unlockedRooms.size() > 1) {
+            Map<AbilityKey, Object> fullyUnlockParams = AbilityKey.mapFromPlayer(p);
+            fullyUnlockParams.put(AbilityKey.Card, this);
+
+            getGame().getTriggerHandler().runTrigger(TriggerType.FullyUnlock, fullyUnlockParams, true);
+        }
+
+        return true;
+    }
+
+    public boolean lockRoom(Player p, CardStateName stateName) {
+        if (!unlockedRooms.contains(stateName) || (stateName != CardStateName.LeftSplit && stateName != CardStateName.RightSplit)) {
+            return false;
+        }
+        unlockedRooms.remove(stateName);
+
+        updateRooms();
+
+        return true;
+    }
+
+    public void updateRooms() {
+        if (!this.isRoom()) {
+            return;
+        }
+        if (this.isFaceDown()) {
+            return;
+        }
+        if (unlockedRooms.isEmpty()) {
+            this.setState(CardStateName.EmptyRoom, true);
+        } else if (unlockedRooms.size() > 1) {
+            this.setState(CardStateName.Original, true);
+        } else { // we already know the set is only one
+            for (CardStateName name : unlockedRooms) {
+                this.setState(name, true);
+            }
+        }
+        // update trigger after state change
+        getGame().getTriggerHandler().clearActiveTriggers(this, null);
+        getGame().getTriggerHandler().registerActiveTrigger(this, false);
+    }
+
+    public CardState getEmptyRoomState() {
+        if (!states.containsKey(CardStateName.EmptyRoom)) {
+            states.put(CardStateName.EmptyRoom, CardUtil.getEmptyRoomCharacteristic(this));
+        }
+        return states.get(CardStateName.EmptyRoom);
+    }
+
+    public SpellAbility getUnlockAbility(CardStateName state) {
+        if (!unlockAbilities.containsKey(state)) {
+            unlockAbilities.put(state, CardFactoryUtil.abilityUnlockRoom(getState(state)));
+        }
+        return unlockAbilities.get(state);
+    }
+
+    public void copyFrom(Card in) {
+        // clean is not needed?
+        this.changedCardColors.putAll(in.changedCardColors);
+        this.changedCardColorsCharacterDefining.putAll(in.changedCardColorsCharacterDefining);
+
+        setChangedCardKeywords(in.getChangedCardKeywords());
+
+        this.changedCardTypes.putAll(in.changedCardTypes);
+        this.changedCardTypesCharacterDefining.putAll(in.changedCardTypesCharacterDefining);
+
+        this.changedCardNames.putAll(in.changedCardNames);
+        setChangedCardTraits(in.getChangedCardTraits());
     }
 }

@@ -1,13 +1,12 @@
 package forge.gamemodes.net;
 
+import com.google.common.collect.Maps;
+
 import java.util.Map;
-import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-
-import com.google.common.collect.Maps;
 
 public class ReplyPool {
 
@@ -42,11 +41,7 @@ public class ReplyPool {
 
     private static final class CompletableFuture extends FutureTask<Object> {
         public CompletableFuture() {
-            super(new Callable<Object>() {
-                @Override public Object call() throws Exception {
-                    return null;
-                }
-            });
+            super(() -> null);
         }
 
         @Override

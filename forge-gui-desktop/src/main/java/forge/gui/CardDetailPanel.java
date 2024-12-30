@@ -167,12 +167,7 @@ public class CardDetailPanel extends SkinnedPanel {
             setInfoLabel.setBorder(BorderFactory.createLineBorder(Color.WHITE));
         }
 
-        SwingUtilities.invokeLater(new Runnable() {
-            @Override
-            public void run() {
-                scrArea.getVerticalScrollBar().setValue(scrArea.getVerticalScrollBar().getMinimum());
-            }
-        });
+        SwingUtilities.invokeLater(() -> scrArea.getVerticalScrollBar().setValue(scrArea.getVerticalScrollBar().getMinimum()));
     }
 
     public final void setCard(final CardView card) {
@@ -203,7 +198,7 @@ public class CardDetailPanel extends SkinnedPanel {
             nameCost = name;
         } else {
             final String manaCost;
-            if (card.isSplitCard() && card.hasAlternateState() && !card.isFaceDown() && card.getZone() != ZoneType.Stack) { //only display current state's mana cost when on stack
+            if (card.isSplitCard() && card.hasAlternateState() && !card.isFaceDown() && card.getZone() != ZoneType.Stack && card.getZone() != ZoneType.Battlefield) { //only display current state's mana cost when on stack
                 manaCost = card.getLeftSplitState().getManaCost() + " // " + card.getAlternateState().getManaCost();
             } else {
                 manaCost = state.getManaCost().toString();
@@ -258,11 +253,7 @@ public class CardDetailPanel extends SkinnedPanel {
         // fill the card text
         cdArea.setText(FSkin.encodeSymbols(CardDetailUtil.composeCardText( state, gameView, mayView), true));
 
-        SwingUtilities.invokeLater(new Runnable() {
-            @Override public void run() {
-                scrArea.getVerticalScrollBar().setValue(scrArea.getVerticalScrollBar().getMinimum());
-            }
-        });
+        SwingUtilities.invokeLater(() -> scrArea.getVerticalScrollBar().setValue(scrArea.getVerticalScrollBar().getMinimum()));
     }
 
     /** @return FLabel */

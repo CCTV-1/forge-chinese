@@ -17,7 +17,6 @@
  */
 package forge.screens.deckeditor.controllers;
 
-import com.google.common.base.Supplier;
 import forge.StaticData;
 import forge.card.CardEdition;
 import forge.deck.*;
@@ -38,6 +37,7 @@ import java.util.Date;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.function.Supplier;
 
 public class DeckController<T extends DeckBase> {
     private T model;
@@ -102,7 +102,7 @@ public class DeckController<T extends DeckBase> {
                 newModel();
                 isStored = false;
             } else
-                isStored = !this.modelPath.equals("");
+                isStored = !this.modelPath.isEmpty();
         } else {
             CardPool catalogClone = new CardPool(view.getInitialCatalog());
             deck = pickFromCatalog(deck, catalogClone);

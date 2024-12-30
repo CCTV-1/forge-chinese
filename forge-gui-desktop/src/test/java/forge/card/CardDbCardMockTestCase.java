@@ -14,11 +14,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
+import java.util.function.Predicate;
 
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
-
-import com.google.common.base.Predicate;
 
 import forge.StaticData;
 import forge.item.IPaperCard;
@@ -1889,7 +1888,7 @@ public class CardDbCardMockTestCase extends CardMockTestCase {
         PaperCard landCard = this.cardDb.getCard(snowCoveredLand);
         assertNotNull(landCard);
         assertEquals(landCard.getName(), snowCoveredLand);
-        assertEquals(landCard.getEdition(), "J22");
+        assertEquals(landCard.getEdition(), "MB2");
 
         this.cardDb.setCardArtPreference(true, true);
         assertEquals(this.cardDb.getCardArtPreference(),
@@ -2029,7 +2028,7 @@ public class CardDbCardMockTestCase extends CardMockTestCase {
 
         militantAngel = this.cardDb.getCard(cnMilitantAngel);
         assertNotNull(militantAngel);
-        assertEquals(militantAngel.getEdition(), "GNT");
+        assertEquals(militantAngel.getEdition(), "PZ2");
 
         legacyMilitantAngel = this.legacyCardDb.getCardFromEdition(cnMilitantAngel,
                 LegacyCardDb.LegacySetPreference.Earliest);
@@ -2039,7 +2038,7 @@ public class CardDbCardMockTestCase extends CardMockTestCase {
         // Loyal Unicorn: Available in Forge in The List and COMMANDER 2018
         loyalUnicorn = this.cardDb.getCard(cnLoyalUnicorn);
         assertNotNull(loyalUnicorn);
-        assertEquals(loyalUnicorn.getEdition(), "C18");
+        assertEquals(loyalUnicorn.getEdition(), "PZ2");
 
         legacyLoyalUnicorn = this.legacyCardDb.getCardFromEdition(cnLoyalUnicorn,
                 LegacyCardDb.LegacySetPreference.Earliest);
@@ -2072,7 +2071,7 @@ public class CardDbCardMockTestCase extends CardMockTestCase {
 
         militantAngel = this.cardDb.getCard(cnMilitantAngel);
         assertNotNull(militantAngel);
-        assertEquals(militantAngel.getEdition(), "GNT");
+        assertEquals(militantAngel.getEdition(), "PZ2");
 
         legacyMilitantAngel = this.legacyCardDb.getCardFromEdition(cnMilitantAngel,
                 LegacyCardDb.LegacySetPreference.EarliestCoreExp);

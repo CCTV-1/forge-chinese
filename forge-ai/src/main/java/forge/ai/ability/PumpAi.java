@@ -1,17 +1,12 @@
 package forge.ai.ability;
 
-import com.google.common.base.Predicate;
-import com.google.common.base.Predicates;
-import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
-
 import forge.ai.*;
 import forge.game.Game;
 import forge.game.ability.AbilityUtils;
 import forge.game.ability.ApiType;
 import forge.game.card.*;
-import forge.game.card.CardPredicates.Presets;
 import forge.game.cost.Cost;
 import forge.game.cost.CostTapType;
 import forge.game.keyword.Keyword;
@@ -24,11 +19,7 @@ import forge.game.spellability.TargetRestrictions;
 import forge.game.zone.ZoneType;
 import org.apache.commons.lang3.StringUtils;
 
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 public class PumpAi extends PumpAiBase {
 
@@ -164,9 +155,52 @@ public class PumpAi extends PumpAiBase {
                     if (attr.isEmpty()) {
                         return false;
                     }
-                    CardCollection best = CardLists.filter(attr, new Predicate<Card>() {
-                        @Override
-                        public boolean apply(Card card) {
+                    CardCollection best = CardLists.filter(attr, card -> {
+                        int amount = 0;
+                        if (StringUtils.isNumeric(amountStr)) {
+                            amount = AbilityUtils.calculateAmount(source, amountStr, moveSA);
+                        } else if (source.hasSVar(amountStr)) {
+                            if ("Count$ChosenNumber".equals(source.getSVar(amountStr))) {
+                                amount = card.getCounters(cType);
+                            }
+                        }
+
+                        int i = card.getCounters(cType);
+                        if (i < amount) {
+                            return false;
+                        }
+
+                        final Card srcCardCpy = CardCopyService.getLKICopy(card);
+                        // cant use substract on Copy
+                        srcCardCpy.setCounters(cType, srcCardCpy.getCounters(cType) - amount);
+
+                        if (cType.is(CounterEnumType.P1P1) && srcCardCpy.getNetToughness() <= 0) {
+                            return srcCardCpy.getCounters(cType) > 0 || !card.hasKeyword(Keyword.UNDYING)
+                                    || card.isToken();
+                        }
+                        return false;
+                    });
+
+                    if (best.isEmpty()) {
+                        best = attr;
+                    }
+
+                    final Card card = ComputerUtilCard.getBestCreatureAI(best);
+                    sa.getTargets().add(card);
+                    return true;
+                }
+            } else {
+                final boolean sameCtrl = moveSA.getTargetRestrictions().isSameController();
+
+                List<Card> list = CardLists.getTargetableCards(game.getCardsIn(ZoneType.Battlefield), sa);
+                if (cType != null) {
+                    list = CardLists.filter(list, CardPredicates.hasCounter(cType));
+                    if (list.isEmpty()) {
+                        return false;
+                    }
+                    List<Card> oppList = CardLists.filterControlledBy(list, ai.getOpponents());
+                    if (!oppList.isEmpty() && !sameCtrl) {
+                        List<Card> best = CardLists.filter(oppList, card -> {
                             int amount = 0;
                             if (StringUtils.isNumeric(amountStr)) {
                                 amount = AbilityUtils.calculateAmount(source, amountStr, moveSA);
@@ -189,57 +223,7 @@ public class PumpAi extends PumpAiBase {
                                 return srcCardCpy.getCounters(cType) > 0 || !card.hasKeyword(Keyword.UNDYING)
                                         || card.isToken();
                             }
-                            return false;
-                        }
-
-                    });
-
-                    if (best.isEmpty()) {
-                        best = attr;
-                    }
-
-                    final Card card = ComputerUtilCard.getBestCreatureAI(best);
-                    sa.getTargets().add(card);
-                    return true;
-                }
-            } else {
-                final boolean sameCtrl = moveSA.getTargetRestrictions().isSameController();
-
-                List<Card> list = CardLists.getTargetableCards(game.getCardsIn(ZoneType.Battlefield), sa);
-                if (cType != null) {
-                    list = CardLists.filter(list, CardPredicates.hasCounter(cType));
-                    if (list.isEmpty()) {
-                        return false;
-                    }
-                    List<Card> oppList = CardLists.filterControlledBy(list, ai.getOpponents());
-                    if (!oppList.isEmpty() && !sameCtrl) {
-                        List<Card> best = CardLists.filter(oppList, new Predicate<Card>() {
-                            @Override
-                            public boolean apply(Card card) {
-                                int amount = 0;
-                                if (StringUtils.isNumeric(amountStr)) {
-                                    amount = AbilityUtils.calculateAmount(source, amountStr, moveSA);
-                                } else if (source.hasSVar(amountStr)) {
-                                    if ("Count$ChosenNumber".equals(source.getSVar(amountStr))) {
-                                        amount = card.getCounters(cType);
-                                    }
-                                }
-
-                                int i = card.getCounters(cType);
-                                if (i < amount) {
-                                    return false;
-                                }
-
-                                final Card srcCardCpy = CardCopyService.getLKICopy(card);
-                                // cant use substract on Copy
-                                srcCardCpy.setCounters(cType, srcCardCpy.getCounters(cType) - amount);
-
-                                if (cType.is(CounterEnumType.P1P1) && srcCardCpy.getNetToughness() <= 0) {
-                                    return srcCardCpy.getCounters(cType) > 0 || !card.hasKeyword(Keyword.UNDYING)
-                                            || card.isToken();
-                                }
-                                return true;
-                            }
+                            return true;
                         });
 
                         if (best.isEmpty()) {
@@ -411,7 +395,7 @@ public class PumpAi extends PumpAiBase {
         CardCollection list;
         if (sa.hasParam("AILogic")) {
             if (sa.getParam("AILogic").equals("HighestPower") || sa.getParam("AILogic").equals("ContinuousBonus")) {
-                list = CardLists.getValidCards(CardLists.filter(game.getCardsIn(ZoneType.Battlefield), Presets.CREATURES), tgt.getValidTgts(), ai, source, sa);
+                list = CardLists.getValidCards(CardLists.filter(game.getCardsIn(ZoneType.Battlefield), CardPredicates.CREATURES), tgt.getValidTgts(), ai, source, sa);
                 list = CardLists.getTargetableCards(list, sa);
                 CardLists.sortByPowerDesc(list);
 
@@ -458,7 +442,7 @@ public class PumpAi extends PumpAiBase {
                     return false;
                 }
 
-                List<Card> alliedTgts = CardLists.filter(tgts, Predicates.or(CardPredicates.isControlledByAnyOf(ai.getAllies()), CardPredicates.isController(ai)));
+                List<Card> alliedTgts = CardLists.filter(tgts, CardPredicates.isControlledByAnyOf(ai.getAllies()).or(CardPredicates.isController(ai)));
                 List<Card> oppTgts = CardLists.filter(tgts, CardPredicates.isControlledByAnyOf(ai.getOpponents()));
 
                 Card destroyTgt = null;
@@ -520,16 +504,13 @@ public class PumpAi extends PumpAiBase {
         // Detain target nonland permanent: don't target noncreature permanents that don't have
         // any activated abilities.
         if ("DetainNonLand".equals(sa.getParam("AILogic"))) {
-            list = CardLists.filter(list, Predicates.or(CardPredicates.Presets.CREATURES, new Predicate<Card>() {
-                @Override
-                public boolean apply(Card card) {
-                    for (SpellAbility sa : card.getSpellAbilities()) {
-                        if (sa.isActivatedAbility()) {
-                            return true;
-                        }
+            list = CardLists.filter(list, CardPredicates.CREATURES.or(card -> {
+                for (SpellAbility sa1 : card.getSpellAbilities()) {
+                    if (sa1.isActivatedAbility()) {
+                        return true;
                     }
-                    return false;
                 }
+                return false;
             }));
         }
 
@@ -548,12 +529,7 @@ public class PumpAi extends PumpAiBase {
         if ("BetterCreatureThanSource".equals(sa.getParam("AILogic"))) {
             // Don't target cards that are not better in value than the targeting card
             final int sourceValue = ComputerUtilCard.evaluateCreature(source);
-            list = CardLists.filter(list, new Predicate<Card>() {
-                @Override
-                public boolean apply(Card card) {
-                    return card.isCreature() && ComputerUtilCard.evaluateCreature(card) > sourceValue + 30;
-                }
-            });
+            list = CardLists.filter(list, card -> card.isCreature() && ComputerUtilCard.evaluateCreature(card) > sourceValue + 30);
         }
 
         if ("ReplaySpell".equals(sa.getParam("AILogic"))) {
@@ -813,29 +789,17 @@ public class PumpAi extends PumpAiBase {
 
             List<String> toRemove = Lists.newArrayList();
             for (final String name : values.keySet()) {
-                if (!Iterables.any(oppList, CardPredicates.nameEquals(name))) {
+                if (!oppList.anyMatch(CardPredicates.nameEquals(name))) {
                     toRemove.add(name);
                 }
             }
             values.keySet().removeAll(toRemove);
 
-            // JAVA 1.8 use Map.Entry.comparingByValue()
-            data.put(opp, Collections.max(values.entrySet(), new Comparator<Map.Entry<String, Integer>>() {
-                @Override
-                public int compare(Map.Entry<String, Integer> o1, Map.Entry<String, Integer> o2) {
-                    return o1.getValue() - o2.getValue();
-                }
-            }));
+            data.put(opp, Collections.max(values.entrySet(), Map.Entry.comparingByValue()));
         }
 
         if (!data.isEmpty()) {
-            // JAVA 1.8 use Map.Entry.comparingByValue() somehow
-            Map.Entry<Player, Map.Entry<String, Integer>> max = Collections.max(data.entrySet(), new Comparator<Map.Entry<Player, Map.Entry<String, Integer>>>() {
-                @Override
-                public int compare(Map.Entry<Player, Map.Entry<String, Integer>> o1, Map.Entry<Player, Map.Entry<String, Integer>> o2) {
-                    return o1.getValue().getValue() - o2.getValue().getValue();
-                }
-            });
+            Map.Entry<Player, Map.Entry<String, Integer>> max = Collections.max(data.entrySet(), Comparator.comparingInt(o -> o.getValue().getValue()));
 
             // filter list again by the opponent and a creature of the wanted name that can be targeted
             list = CardLists.filter(CardLists.filterControlledBy(list, max.getKey()),

@@ -80,25 +80,7 @@ public class GameSnapshot {
 
         for (Player p : fromGame.getPlayers()) {
             Player toPlayer = findBy(toGame, p);
-
-            List<Card> commanders = Lists.newArrayList();
-
-            // Commander cast times are stored in the player, not the card
-            toPlayer.resetCommanderStats();
-            for (final Card c : p.getCommanders()) {
-                Card newCommander = findBy(toGame, c);
-                commanders.add(newCommander);
-                int castTimes = p.getCommanderCast(c);
-                for (int i = 0; i < castTimes; i++) {
-                    toPlayer.incCommanderCast(newCommander);
-                }
-            }
-            for (Map.Entry<Card, Integer> entry : p.getCommanderDamage()) {
-                Card commander = findBy(toGame, entry.getKey());
-                int damage = entry.getValue();
-                toPlayer.addCommanderDamage(commander, damage);
-            }
-            toPlayer.setCommanders(commanders);
+            p.copyCommandersToSnapshot(toPlayer, c -> findBy(toGame, c));
             ((PlayerZoneBattlefield) toPlayer.getZone(ZoneType.Battlefield)).setTriggers(true);
         }
         toGame.getTriggerHandler().clearSuppression(TriggerType.ChangesZone);
@@ -135,7 +117,7 @@ public class GameSnapshot {
             for (SpellAbility sa : c.getSpellAbilities()) {
                 Player activatingPlayer = sa.getActivatingPlayer();
                 if (activatingPlayer != null && activatingPlayer.getGame() != toGame) {
-                    sa.setActivatingPlayer(findBy(toGame, activatingPlayer), true);
+                    sa.setActivatingPlayer(findBy(toGame, activatingPlayer));
                 }
             }
         }
@@ -186,7 +168,6 @@ public class GameSnapshot {
         newPlayer.setLifeGainedThisTurn(origPlayer.getLifeGainedThisTurn());
         newPlayer.setLifeStartedThisTurnWith(origPlayer.getLifeStartedThisTurnWith());
         newPlayer.setDamageReceivedThisTurn(origPlayer.getDamageReceivedThisTurn());
-        newPlayer.setActivateLoyaltyAbilityThisTurn(origPlayer.getActivateLoyaltyAbilityThisTurn());
         newPlayer.setLandsPlayedThisTurn(origPlayer.getLandsPlayedThisTurn());
         newPlayer.setCounters(Maps.newHashMap(origPlayer.getCounters()));
         newPlayer.setBlessing(origPlayer.hasBlessing());
@@ -204,8 +185,6 @@ public class GameSnapshot {
 
         // Copy mana pool
         copyManaPool(origPlayer, newPlayer);
-
-        newPlayer.setCommanders(origPlayer.getCommanders()); // will be fixed up below
     }
 
     private void copyManaPool(Player fromPlayer, Player toPlayer) {
@@ -271,7 +250,7 @@ public class GameSnapshot {
 
             // Is the SA on the stack?
             if (newSa != null) {
-                newSa.setActivatingPlayer(findBy(toGame, origSa.getActivatingPlayer()), true);
+                newSa.setActivatingPlayer(findBy(toGame, origSa.getActivatingPlayer()));
                 if (origSa.usesTargeting()) {
                     for (GameObject o : origSa.getTargets()) {
                         if (o instanceof Card) {
@@ -362,16 +341,16 @@ public class GameSnapshot {
             if (fromCard.getCloneOrigin() != null) {
                 newCard.setCloneOrigin(toGame.findById(fromCard.getCloneOrigin().getId()));
             }
-            if (newCard.getHaunting() != null) {
+            if (fromCard.getHaunting() != null) {
                 newCard.setHaunting(toGame.findById(fromCard.getHaunting().getId()));
             }
-            if (newCard.getEffectSource() != null) {
+            if (fromCard.getEffectSource() != null) {
                 newCard.setEffectSource(toGame.findById(fromCard.getEffectSource().getId()));
             }
-            if (newCard.isPaired()) {
+            if (fromCard.isPaired()) {
                 newCard.setPairedWith(toGame.findById(fromCard.getPairedWith().getId()));
             }
-            if (newCard.getCopiedPermanent() != null) {
+            if (fromCard.getCopiedPermanent() != null) {
                 newCard.setCopiedPermanent(toGame.findById(fromCard.getCopiedPermanent().getId()));
             }
             // TODO: Verify that the above relationships are preserved bi-directionally or not.

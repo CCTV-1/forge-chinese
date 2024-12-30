@@ -74,7 +74,7 @@ public class CharmEffect extends SpellAbilityEffect {
         } else {
             // fallback needed while ability building
             if (sa.getActivatingPlayer() == null) {
-                sa.setActivatingPlayer(source.getController(), true);
+                sa.setActivatingPlayer(source.getController());
             }
             if (!isX) {
                 num = AbilityUtils.calculateAmount(source, numParam, sa);
@@ -173,7 +173,7 @@ public class CharmEffect extends SpellAbilityEffect {
                 if (spree) {
                     sb.append("+ " + new Cost(sub.getParam("SpreeCost"), false).toSimpleString() + " \u2014 ");
                 } else if (sub.hasParam("Pawprint")) {
-                    sb.append(StringUtils.repeat("{P}", Integer.valueOf(sub.getParam("Pawprint"))) + " \u2014 ");
+                    sb.append(StringUtils.repeat("{P}", Integer.parseInt(sub.getParam("Pawprint"))) + " \u2014 ");
                 } else {
                     sb.append("\u2022 ");
                 }
@@ -269,12 +269,7 @@ public class CharmEffect extends SpellAbilityEffect {
         }
 
         // Sort Chosen by SA order
-        chosen.sort(new Comparator<AbilitySub>() {
-            @Override
-            public int compare(AbilitySub o1, AbilitySub o2) {
-                return Integer.compare(o1.getSVarInt("CharmOrder"), o2.getSVarInt("CharmOrder"));
-            }
-        });
+        chosen.sort(Comparator.comparingInt(o -> o.getSVarInt("CharmOrder")));
 
         for (AbilitySub sub : chosen) {
             // Clone the chosen, just in case the same subAb gets chosen multiple times

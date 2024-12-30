@@ -1,7 +1,6 @@
 package forge.menus;
 
 import java.awt.Desktop;
-import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.KeyEvent;
 import java.io.File;
@@ -16,6 +15,8 @@ import forge.toolbox.FOptionPane;
 import forge.util.BuildInfo;
 import forge.util.FileUtil;
 import forge.util.Localizer;
+
+import static forge.localinstance.properties.ForgeConstants.GITHUB_FORGE_URL;
 
 public final class HelpMenu {
     private HelpMenu() { }
@@ -43,14 +44,11 @@ public final class HelpMenu {
     }
 
     private static ActionListener getAboutForgeAction() {
-        return new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                final Localizer localizer = Localizer.getInstance();
-                FOptionPane.showMessageDialog(
-                        "Version : " + BuildInfo.getVersionString(),
-                        localizer.getMessage("lblAboutForge"));
-            }
+        return e -> {
+            final Localizer localizer = Localizer.getInstance();
+            FOptionPane.showMessageDialog(
+                    "Version : " + BuildInfo.getVersionString(),
+                    localizer.getMessage("lblAboutForge"));
         };
     }
 
@@ -75,8 +73,8 @@ public final class HelpMenu {
         JMenu mnu = new JMenu(localizer.getMessage("lblGettingStarted"));
         mnu.add(getMenuItem_HowToPlayFile());
         mnu.addSeparator();
-        mnu.add(getMenuItem_UrlLink("Forge Wiki", "https://github.com/Card-Forge/forge/wiki", KeyStroke.getKeyStroke(KeyEvent.VK_F1, 0)));
-        mnu.add(getMenuItem_UrlLink("What is Forge?", "https://github.com/Card-Forge/forge/wiki#what-is-forge"));
+        mnu.add(getMenuItem_UrlLink("Forge Wiki", GITHUB_FORGE_URL + "wiki", KeyStroke.getKeyStroke(KeyEvent.VK_F1, 0)));
+        mnu.add(getMenuItem_UrlLink("What is Forge?", GITHUB_FORGE_URL + "wiki#what-is-forge"));
         return mnu;
     }
 
@@ -115,15 +113,12 @@ public final class HelpMenu {
     }
 
     private static ActionListener getOpenFileAction(final File file) {
-        return new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                try {
-                    openFile(file);
-                } catch (IOException e1) {
-                    // Auto-generated catch block ignores the exception, but sends it to System.err and probably forge.log.
-                    e1.printStackTrace();
-                }
+        return e -> {
+            try {
+                openFile(file);
+            } catch (IOException e1) {
+                // Auto-generated catch block ignores the exception, but sends it to System.err and probably forge.log.
+                e1.printStackTrace();
             }
         };
     }
@@ -150,6 +145,8 @@ public final class HelpMenu {
      * @see http://stackoverflow.com/questions/6273221/open-a-text-file-in-the-default-text-editor-via-java
      */
     private static void openFile(File file) throws IOException {
+        if (file == null)
+            return;
         if (System.getProperty("os.name").toLowerCase().contains("windows")) {
             String cmd = "rundll32 url.dll,FileProtocolHandler " + file.getCanonicalPath();
             Runtime.getRuntime().exec(cmd);
@@ -172,12 +169,7 @@ public final class HelpMenu {
     }
 
     private static ActionListener getLaunchUrlAction(final String url) {
-        return new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                MenuUtil.openUrlInBrowser(url);
-            }
-        };
+        return e -> MenuUtil.openUrlInBrowser(url);
     }
 
 }

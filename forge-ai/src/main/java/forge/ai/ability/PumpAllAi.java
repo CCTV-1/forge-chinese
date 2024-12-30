@@ -1,12 +1,5 @@
 package forge.ai.ability;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-
-import com.google.common.base.Predicate;
-import com.google.common.collect.Iterables;
-
 import forge.ai.ComputerUtil;
 import forge.ai.ComputerUtilCard;
 import forge.ai.ComputerUtilCombat;
@@ -25,6 +18,10 @@ import forge.game.phase.PhaseType;
 import forge.game.player.Player;
 import forge.game.spellability.SpellAbility;
 import forge.game.zone.ZoneType;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
 public class PumpAllAi extends PumpAiBase {
 
@@ -85,23 +82,17 @@ public class PumpAllAi extends PumpAiBase {
 
         if (sa.isCurse()) {
             if (defense < 0) { // try to destroy creatures
-                comp = CardLists.filter(comp, new Predicate<Card>() {
-                    @Override
-                    public boolean apply(final Card c) {
-                        if (c.getNetToughness() <= -defense) {
-                            return true; // can kill indestructible creatures
-                        }
-                        return ComputerUtilCombat.getDamageToKill(c, false) <= -defense && !c.hasKeyword(Keyword.INDESTRUCTIBLE);
+                comp = CardLists.filter(comp, c -> {
+                    if (c.getNetToughness() <= -defense) {
+                        return true; // can kill indestructible creatures
                     }
+                    return ComputerUtilCombat.getDamageToKill(c, false) <= -defense && !c.hasKeyword(Keyword.INDESTRUCTIBLE);
                 }); // leaves all creatures that will be destroyed
-                human = CardLists.filter(human, new Predicate<Card>() {
-                    @Override
-                    public boolean apply(final Card c) {
-                        if (c.getNetToughness() <= -defense) {
-                            return true; // can kill indestructible creatures
-                        }
-                        return ComputerUtilCombat.getDamageToKill(c, false) <= -defense && !c.hasKeyword(Keyword.INDESTRUCTIBLE);
+                human = CardLists.filter(human, c -> {
+                    if (c.getNetToughness() <= -defense) {
+                        return true; // can kill indestructible creatures
                     }
+                    return ComputerUtilCombat.getDamageToKill(c, false) <= -defense && !c.hasKeyword(Keyword.INDESTRUCTIBLE);
                 }); // leaves all creatures that will be destroyed
             } // -X/-X end
             else if (power < 0) { // -X/-0
@@ -142,7 +133,7 @@ public class PumpAllAi extends PumpAiBase {
             return pumpAgainstRemoval(ai, sa, comp);
         }
 
-        return Iterables.any(ai.getCreaturesInPlay(), c -> c.isValid(valid, source.getController(), source, sa)
+        return ai.getCreaturesInPlay().anyMatch(c -> c.isValid(valid, source.getController(), source, sa)
                 && ComputerUtilCard.shouldPumpCard(ai, sa, c, defense, power, keywords));
     } // pumpAllCanPlayAI()
 

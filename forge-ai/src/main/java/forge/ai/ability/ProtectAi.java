@@ -1,16 +1,6 @@
 package forge.ai.ability;
 
-import java.util.ArrayList;
-import java.util.List;
-
-import com.google.common.base.Predicate;
-
-import forge.ai.AiAttackController;
-import forge.ai.ComputerUtil;
-import forge.ai.ComputerUtilCard;
-import forge.ai.ComputerUtilCombat;
-import forge.ai.ComputerUtilCost;
-import forge.ai.SpellAbilityAi;
+import forge.ai.*;
 import forge.card.MagicColor;
 import forge.game.Game;
 import forge.game.GameObject;
@@ -28,6 +18,9 @@ import forge.game.player.Player;
 import forge.game.spellability.SpellAbility;
 import forge.game.spellability.TargetRestrictions;
 import forge.util.MyRandom;
+
+import java.util.ArrayList;
+import java.util.List;
 
 public class ProtectAi extends SpellAbilityAi {
     private static boolean hasProtectionFrom(final Card card, final String color) {
@@ -107,54 +100,51 @@ public class ProtectAi extends SpellAbilityAi {
         
         CardCollection list = ai.getCreaturesInPlay();
         final List<GameObject> threatenedObjects = ComputerUtil.predictThreatenedObjects(sa.getActivatingPlayer(), sa, true);
-        list = CardLists.filter(list, new Predicate<Card>() {
-            @Override
-            public boolean apply(final Card c) {
-                if (!c.canBeTargetedBy(sa)) {
-                    return false;
-                }
-
-                // Don't add duplicate protections
-                if (hasProtectionFromAll(c, gains)) {
-                    return false;
-                }
-
-                if (threatenedObjects.contains(c)) {
-                    return true;
-                }
-
-                if (combat != null) {
-                    //creature is blocking and would be destroyed itself
-                    if (combat.isBlocking(c) && ComputerUtilCombat.blockerWouldBeDestroyed(ai, c, combat)) {
-                        List<Card> threats = combat.getAttackersBlockedBy(c);
-                        return threats != null && !threats.isEmpty() && ProtectAi.toProtectFrom(threats.get(0), sa) != null;
-                    }
-    
-                    //creature is attacking and would be destroyed itself
-                    if (combat.isAttacking(c) && combat.isBlocked(c) && ComputerUtilCombat.attackerWouldBeDestroyed(ai, c, combat)) {
-                        CardCollection threats = combat.getBlockers(c);
-                        if (threats != null && !threats.isEmpty()) {
-                        	ComputerUtilCard.sortByEvaluateCreature(threats);
-                        	return ProtectAi.toProtectFrom(threats.get(0), sa) != null;
-                        }
-                    }
-                }
-                
-                //make unblockable
-                if (ph.getPlayerTurn() == ai && ph.getPhase() == PhaseType.MAIN1) {
-                    AiAttackController aiAtk = new AiAttackController(ai, c);
-                    String s = aiAtk.toProtectAttacker(sa);
-                    if (s == null) {
-                        return false;
-                    }
-                    Player opponent = ai.getWeakestOpponent();
-                    Combat combat = ai.getGame().getCombat();
-                    int dmg = ComputerUtilCombat.damageIfUnblocked(c, opponent, combat, true);
-                    float ratio = 1.0f * dmg / opponent.getLife();
-                    return MyRandom.getRandom().nextFloat() < ratio;
-                }
+        list = CardLists.filter(list, c -> {
+            if (!c.canBeTargetedBy(sa)) {
                 return false;
             }
+
+            // Don't add duplicate protections
+            if (hasProtectionFromAll(c, gains)) {
+                return false;
+            }
+
+            if (threatenedObjects.contains(c)) {
+                return true;
+            }
+
+            if (combat != null) {
+                //creature is blocking and would be destroyed itself
+                if (combat.isBlocking(c) && ComputerUtilCombat.blockerWouldBeDestroyed(ai, c, combat)) {
+                    List<Card> threats = combat.getAttackersBlockedBy(c);
+                    return threats != null && !threats.isEmpty() && ProtectAi.toProtectFrom(threats.get(0), sa) != null;
+                }
+
+                //creature is attacking and would be destroyed itself
+                if (combat.isAttacking(c) && combat.isBlocked(c) && ComputerUtilCombat.attackerWouldBeDestroyed(ai, c, combat)) {
+                    CardCollection threats = combat.getBlockers(c);
+                    if (threats != null && !threats.isEmpty()) {
+                        ComputerUtilCard.sortByEvaluateCreature(threats);
+                        return ProtectAi.toProtectFrom(threats.get(0), sa) != null;
+                    }
+                }
+            }
+
+            //make unblockable
+            if (ph.getPlayerTurn() == ai && ph.getPhase() == PhaseType.MAIN1) {
+                AiAttackController aiAtk = new AiAttackController(ai, c);
+                String s = aiAtk.toProtectAttacker(sa);
+                if (s == null) {
+                    return false;
+                }
+                Player opponent = ai.getWeakestOpponent();
+                Combat combat1 = ai.getGame().getCombat();
+                int dmg = ComputerUtilCombat.damageIfUnblocked(c, opponent, combat1, true);
+                float ratio = 1.0f * dmg / opponent.getLife();
+                return MyRandom.getRandom().nextFloat() < ratio;
+            }
+            return false;
         });
         return list;
     }
@@ -266,19 +256,9 @@ public class ProtectAi extends SpellAbilityAi {
         }
 
         CardCollection pref = CardLists.filterControlledBy(list, ai);
-        pref = CardLists.filter(pref, new Predicate<Card>() {
-            @Override
-            public boolean apply(final Card c) {
-                return !hasProtectionFromAll(c, ProtectEffect.getProtectionList(sa));
-            }
-        });
+        pref = CardLists.filter(pref, c -> !hasProtectionFromAll(c, ProtectEffect.getProtectionList(sa)));
         final CardCollection pref2 = CardLists.filterControlledBy(list, ai);
-        pref = CardLists.filter(pref, new Predicate<Card>() {
-            @Override
-            public boolean apply(final Card c) {
-                return !hasProtectionFromAny(c, ProtectEffect.getProtectionList(sa));
-            }
-        });
+        pref = CardLists.filter(pref, c -> !hasProtectionFromAny(c, ProtectEffect.getProtectionList(sa)));
         final List<Card> forced = CardLists.filterControlledBy(list, ai);
 
         while (sa.canAddMoreTarget()) {

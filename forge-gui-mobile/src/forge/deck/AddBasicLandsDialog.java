@@ -23,7 +23,6 @@ import java.util.Map;
 import java.util.Map.Entry;
 
 import com.badlogic.gdx.utils.Align;
-import com.google.common.collect.Iterables;
 
 import forge.Forge;
 import forge.Graphics;
@@ -43,15 +42,11 @@ import forge.toolbox.FComboBox;
 import forge.toolbox.FContainer;
 import forge.toolbox.FDialog;
 import forge.toolbox.FDisplayObject;
-import forge.toolbox.FEvent;
-import forge.toolbox.FEvent.FEventHandler;
 import forge.toolbox.FLabel;
 import forge.toolbox.FOptionPane;
 import forge.toolbox.FScrollPane;
 import forge.toolbox.FTextArea;
-import forge.util.Callback;
-import forge.util.MyRandom;
-import forge.util.Utils;
+import forge.util.*;
 
 
 public class AddBasicLandsDialog extends FDialog {
@@ -63,7 +58,7 @@ public class AddBasicLandsDialog extends FDialog {
     private final Callback<CardPool> callback;
 
     private final FLabel lblLandSet = add(new FLabel.Builder().text(Forge.getLocalizer().getMessage("lblLandSet") + ":").font(FSkinFont.get(12)).textColor(FLabel.getInlineLabelColor()).build());
-    private final FComboBox<CardEdition> cbLandSet = add(new FComboBox<>(Iterables.filter(StaticData.instance().getEditions(), CardEdition.Predicates.hasBasicLands)));
+    private final FComboBox<CardEdition> cbLandSet = add(new FComboBox<>(IterableUtil.filter(StaticData.instance().getEditions(), CardEdition.Predicates.hasBasicLands)));
 
     private final FScrollPane scroller = add(new FScrollPane() {
         @Override
@@ -129,16 +124,13 @@ public class AddBasicLandsDialog extends FDialog {
 
         cbLandSet.setFont(lblLandSet.getFont());
         cbLandSet.setAutoClose(false);
-        cbLandSet.setChangedHandler(new FEventHandler() {
-            @Override
-            public void handleEvent(FEvent e) {
-                landSet = cbLandSet.getSelectedItem();
-                pnlPlains.refreshArtChoices();
-                pnlIsland.refreshArtChoices();
-                pnlSwamp.refreshArtChoices();
-                pnlMountain.refreshArtChoices();
-                pnlForest.refreshArtChoices();
-            }
+        cbLandSet.setChangedHandler(e -> {
+            landSet = cbLandSet.getSelectedItem();
+            pnlPlains.refreshArtChoices();
+            pnlIsland.refreshArtChoices();
+            pnlSwamp.refreshArtChoices();
+            pnlMountain.refreshArtChoices();
+            pnlForest.refreshArtChoices();
         });
 
         if (editionOptions != null && !editionOptions.isEmpty())
@@ -148,29 +140,21 @@ public class AddBasicLandsDialog extends FDialog {
 
         cbLandSet.setSelectedItem(defaultLandSet);
 
-        initButton(0, Forge.getLocalizer().getMessage("lblOK"), new FEventHandler() {
-            @Override
-            public void handleEvent(FEvent e) {
-                CardPool landsToAdd = new CardPool();
-                pnlPlains.addToCardPool(landsToAdd);
-                pnlIsland.addToCardPool(landsToAdd);
-                pnlSwamp.addToCardPool(landsToAdd);
-                pnlMountain.addToCardPool(landsToAdd);
-                pnlForest.addToCardPool(landsToAdd);
+        initButton(0, Forge.getLocalizer().getMessage("lblOK"), e -> {
+            CardPool landsToAdd = new CardPool();
+            pnlPlains.addToCardPool(landsToAdd);
+            pnlIsland.addToCardPool(landsToAdd);
+            pnlSwamp.addToCardPool(landsToAdd);
+            pnlMountain.addToCardPool(landsToAdd);
+            pnlForest.addToCardPool(landsToAdd);
 
-                hide();
+            hide();
 
-                if (landsToAdd.countAll() > 0) {
-                    callback.run(landsToAdd);
-                }
+            if (landsToAdd.countAll() > 0) {
+                callback.run(landsToAdd);
             }
         });
-        initButton(1, Forge.getLocalizer().getMessage("lblCancel"), new FEventHandler() {
-            @Override
-            public void handleEvent(FEvent e) {
-                hide();
-            }
-        });
+        initButton(1, Forge.getLocalizer().getMessage("lblCancel"), e -> hide());
 
         //initialize land counts based on current deck contents
         int halfCountW = 0; //track half shard count for each color to add to symbol count only if a full symbol is also found
@@ -324,33 +308,24 @@ public class AddBasicLandsDialog extends FDialog {
             cardPanel = add(new LandCardPanel());
             cbLandArt = add(new FComboBox<>());
             cbLandArt.setFont(cbLandSet.getFont());
-            cbLandArt.setChangedHandler(new FEventHandler() {
-                @Override
-                public void handleEvent(FEvent e) {
-                    int artIndex = cbLandArt.getSelectedIndex();
-                    if (artIndex < 0) { return; }
-                    card = generateCard(artIndex); //generate card for display
-                }
+            cbLandArt.setChangedHandler(e -> {
+                int artIndex = cbLandArt.getSelectedIndex();
+                if (artIndex < 0) { return; }
+                card = generateCard(artIndex); //generate card for display
             });
             lblCount = add(new FLabel.Builder().text("0").font(FSkinFont.get(18)).align(Align.center).build());
-            btnSubtract = add(new FLabel.ButtonBuilder().icon(Forge.hdbuttons ? FSkinImage.HDMINUS : FSkinImage.MINUS).command(new FEventHandler() {
-                @Override
-                public void handleEvent(FEvent e) {
-                    if (count > 0) {
-                        count--;
-                        lblCount.setText(String.valueOf(count));
-                        updateDeckInfoLabel();
-                    }
+            btnSubtract = add(new FLabel.ButtonBuilder().icon(Forge.hdbuttons ? FSkinImage.HDMINUS : FSkinImage.MINUS).command(e -> {
+                if (count > 0) {
+                    count--;
+                    lblCount.setText(String.valueOf(count));
+                    updateDeckInfoLabel();
                 }
             }).build());
-            btnAdd = add(new FLabel.ButtonBuilder().icon(Forge.hdbuttons ? FSkinImage.HDPLUS : FSkinImage.PLUS).command(new FEventHandler() {
-                @Override
-                public void handleEvent(FEvent e) {
-                    if (maxCount == 0 || count < maxCount) {
-                        count++;
-                        lblCount.setText(String.valueOf(count));
-                        updateDeckInfoLabel();
-                    }
+            btnAdd = add(new FLabel.ButtonBuilder().icon(Forge.hdbuttons ? FSkinImage.HDPLUS : FSkinImage.PLUS).command(e -> {
+                if (maxCount == 0 || count < maxCount) {
+                    count++;
+                    lblCount.setText(String.valueOf(count));
+                    updateDeckInfoLabel();
                 }
             }).build());
         }

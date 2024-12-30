@@ -19,11 +19,7 @@ package forge.game.trigger;
 
 import java.util.*;
 
-import com.google.common.collect.ArrayListMultimap;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.ListMultimap;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Multimaps;
+import com.google.common.collect.*;
 
 import forge.game.CardTraitBase;
 import forge.game.CardTraitPredicates;
@@ -102,7 +98,7 @@ public class TriggerHandler {
 
     public final void handlePlayerDefinedDelTriggers(final Player player) {
         final List<Trigger> playerTriggers = playerDefinedDelayedTriggers.removeAll(player);
-        Iterables.addAll(thisTurnDelayedTriggers, Iterables.filter(playerTriggers, CardTraitPredicates.hasParam("ThisTurn")));
+        playerTriggers.stream().filter(CardTraitPredicates.hasParam("ThisTurn")).forEach(thisTurnDelayedTriggers::add);
         delayedTriggers.addAll(playerTriggers);
     }
 
@@ -135,7 +131,7 @@ public class TriggerHandler {
             Breadcrumb bread = new Breadcrumb(msg);
             bread.setData("Card", host.getName());
             bread.setData("Trigger", trigParse);
-            Sentry.addBreadcrumb(bread, host);
+            Sentry.addBreadcrumb(bread);
 
             //rethrow
             throw new RuntimeException("Error in Trigger for Card: " + host.getName(), e);
@@ -163,7 +159,7 @@ public class TriggerHandler {
             Breadcrumb bread = new Breadcrumb(msg);
             bread.setData("Card", host.getName());
             bread.setData("Params", mapParams.toString());
-            Sentry.addBreadcrumb(bread, host);
+            Sentry.addBreadcrumb(bread);
 
             //rethrow
             throw new RuntimeException("Error in Trigger for Card: " + host.getName(), e);
@@ -242,8 +238,8 @@ public class TriggerHandler {
         for (final Trigger t : c.getTriggers()) {
             if (
                     TriggerType.Exploited.equals(t.getMode()) ||
-                    TriggerType.Sacrificed.equals(t.getMode()) ||
                     TriggerType.Destroyed.equals(t.getMode()) ||
+                    TriggerType.Sacrificed.equals(t.getMode()) || TriggerType.SacrificedOnce.equals(t.getMode()) ||
                     ((TriggerType.ChangesZone.equals(t.getMode()) || TriggerType.ChangesZoneAll.equals(t.getMode()))
                             && "Battlefield".equals(t.getParam("Origin")))) { // TODO needs additional logic in case origin=Any
                 registerOneTrigger(t);

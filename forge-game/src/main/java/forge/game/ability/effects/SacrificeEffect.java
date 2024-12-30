@@ -21,7 +21,7 @@ import forge.game.ability.SpellAbilityEffect;
 import forge.game.cost.Cost;
 import forge.game.keyword.Keyword;
 import forge.game.player.Player;
-import forge.game.player.PlayerController.ManaPaymentPurpose;
+import forge.game.player.PlayerCollection;
 import forge.game.spellability.SpellAbility;
 import forge.game.trigger.TriggerType;
 import forge.game.zone.ZoneType;
@@ -42,8 +42,7 @@ public class SacrificeEffect extends SpellAbilityEffect {
                     && activator.getController().confirmAction(sa, null, Localizer.getInstance().getMessage("lblDoYouWantPayEcho") + " {0}?", null)) {
                 isPaid = true;
             } else {
-                isPaid = activator.getController().payManaOptional(host, new Cost(sa.getParam("Echo"), true),
-                    sa, Localizer.getInstance().getMessage("lblPayEcho"), ManaPaymentPurpose.Echo);
+                isPaid = activator.getController().payCostToPreventEffect(new Cost(sa.getParam("Echo"), true), sa, false, new PlayerCollection(activator));
             }
             final Map<AbilityKey, Object> runParams = AbilityKey.mapFromCard(host);
             runParams.put(AbilityKey.EchoPaid, isPaid);
@@ -66,10 +65,7 @@ public class SacrificeEffect extends SpellAbilityEffect {
 
             game.updateLastStateForCard(host);
 
-            StringBuilder sb = new StringBuilder();
-            sb.append("Cumulative upkeep for ").append(host);
-
-            boolean isPaid = activator.getController().payManaOptional(host, payCost, sa, sb.toString(), ManaPaymentPurpose.CumulativeUpkeep);
+            boolean isPaid = activator.getController().payCostToPreventEffect(payCost, sa, false, new PlayerCollection(activator));
             final Map<AbilityKey, Object> runParams = AbilityKey.mapFromCard(host);
             runParams.put(AbilityKey.CumulativeUpkeepPaid, isPaid);
             runParams.put(AbilityKey.PayingMana, StringUtils.join(sa.getPayingMana(), ""));
@@ -99,7 +95,7 @@ public class SacrificeEffect extends SpellAbilityEffect {
             if (host.getController().equals(activator) && game.getZoneOf(host).is(ZoneType.Battlefield)) {
                 if (!optional || activator.getController().confirmAction(sa, null,
                         Localizer.getInstance().getMessage("lblDoYouWantSacrificeThis", host.getName()), null)) {
-                    if (game.getAction().sacrifice(host, sa, true, params) != null && remSacrificed) {
+                    if (game.getAction().sacrifice(new CardCollection(host), sa, true, params) != null && remSacrificed) {
                         host.addRemembered(host);
                     }
                 }
@@ -155,25 +151,32 @@ public class SacrificeEffect extends SpellAbilityEffect {
 
                 choosenToSacrifice = GameActionUtil.orderCardsByTheirOwners(game, choosenToSacrifice, ZoneType.Graveyard, sa);
 
-                for (Card sac : choosenToSacrifice) {
-                    Card lKICopy = zoneMovements.getLastStateBattlefield().get(sac);
-                    boolean wasSacrificed = !destroy && game.getAction().sacrifice(sac, sa, true, params) != null;
-                    boolean wasDestroyed = destroy && game.getAction().destroy(sac, sa, true, params);
-                    // Run Devour Trigger
-                    if (devour) {
-                        host.addDevoured(lKICopy);
-                        final Map<AbilityKey, Object> runParams = AbilityKey.newMap();
-                        runParams.put(AbilityKey.Devoured, lKICopy);
-                        game.getTriggerHandler().runTrigger(TriggerType.Devoured, runParams, false);
+                if (destroy) {
+                    for (Card sac : choosenToSacrifice) {
+                        Card lKICopy = zoneMovements.getLastStateBattlefield().get(sac);
+                        if (game.getAction().destroy(sac, sa, true, params) && remSacrificed) {
+                            host.addRemembered(lKICopy);
+                        }
                     }
-                    if (exploit) {
-                        host.addExploited(lKICopy);
-                        final Map<AbilityKey, Object> runParams = AbilityKey.mapFromCard(host);
-                        runParams.put(AbilityKey.Exploited, lKICopy);
-                        game.getTriggerHandler().runTrigger(TriggerType.Exploited, runParams, false);
-                    }
-                    if ((wasDestroyed || wasSacrificed) && remSacrificed) {
-                        host.addRemembered(lKICopy);
+                } else {
+                    for (Card sac : game.getAction().sacrifice(choosenToSacrifice, sa, true, params)) {
+                        Card lKICopy = zoneMovements.getLastStateBattlefield().get(sac);
+                        // Run Devour Trigger
+                        if (devour) {
+                            host.addDevoured(lKICopy);
+                            final Map<AbilityKey, Object> runParams = AbilityKey.newMap();
+                            runParams.put(AbilityKey.Devoured, lKICopy);
+                            game.getTriggerHandler().runTrigger(TriggerType.Devoured, runParams, false);
+                        }
+                        if (exploit) {
+                            host.addExploited(lKICopy);
+                            final Map<AbilityKey, Object> runParams = AbilityKey.mapFromCard(host);
+                            runParams.put(AbilityKey.Exploited, lKICopy);
+                            game.getTriggerHandler().runTrigger(TriggerType.Exploited, runParams, false);
+                        }
+                        if (remSacrificed) {
+                            host.addRemembered(lKICopy);
+                        }
                     }
                 }
             }

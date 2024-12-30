@@ -1,7 +1,6 @@
 package forge.screens.planarconquest;
 
 import com.google.common.collect.Iterables;
-
 import forge.Forge;
 import forge.assets.FImage;
 import forge.card.CardImage;
@@ -37,7 +36,7 @@ public class NewConquestScreen extends MultiStepWizardScreen<NewConquestScreenMo
     @Override
     protected void finish() {
         //create new quest in game thread so option panes can wait for input
-        ThreadUtil.invokeInGameThread(() -> newConquest());
+        ThreadUtil.invokeInGameThread(this::newConquest);
     }
 
     private void newConquest() {

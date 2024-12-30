@@ -85,7 +85,7 @@ public final class ImageKeys {
     }
 
     private static final Map<String, File> cachedCards = new HashMap<>(50000);
-    private static HashSet<String> missingCards = new HashSet<>();
+    public static HashSet<String> missingCards = new HashSet<>();
     public static void clearMissingCards() {
         missingCards.clear();
     }
@@ -310,7 +310,7 @@ public final class ImageKeys {
         }
 
         // System.out.println("File not found, no image created: " + key);
-        //add missing cards - disable for desktop version for compatibility reasons with autodownloader
+        // add missing cards - disable for desktop version for compatibility reasons with autodownloader
         if (isLibGDXPort && !hasSetLookup(filename)) //missing cards with setlookup is handled differently
             missingCards.add(filename);
         return null;
@@ -322,8 +322,10 @@ public final class ImageKeys {
                 : CACHE_CARD_PICS_SUBDIR.get(edition); // may use custom paths though
     }
     public static boolean hasSetLookup(String filename) {
+        if (filename == null)
+            return false;
         if (!StaticData.instance().getSetLookup().isEmpty()) {
-            return StaticData.instance().getSetLookup().keySet().stream().anyMatch(setKey -> filename.startsWith(setKey));
+            return StaticData.instance().getSetLookup().keySet().stream().anyMatch(filename::startsWith);
         }
 
         return false;
@@ -337,7 +339,7 @@ public final class ImageKeys {
                         File f = new File(lookupDirectory);
                         if (f.exists() && f.isDirectory()) {
                             for (String ext : FILE_EXTENSIONS) {
-                                if (ext.equals(""))
+                                if (ext.isEmpty())
                                     continue;
                                 File placeholder;
                                 String fb1 = fullborderFile.replace(setKey+"/","")+ext;
@@ -371,7 +373,7 @@ public final class ImageKeys {
     private static File findFile(String dir, String filename) {
         if (dir.equals(CACHE_CARD_PICS_DIR)) {
             for (String ext : FILE_EXTENSIONS) {
-                if (ext.equals(""))
+                if (ext.isEmpty())
                     continue;
 
                 File f = new File(dir, filename + ext);

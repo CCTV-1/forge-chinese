@@ -60,7 +60,7 @@ public class SettingsPage extends TabPage<SettingsScreen> {
             public void valueChanged(String newValue) {
                 // if the new locale needs to use CJK font, disallow change if UI_CJK_FONT is not set yet
                 ForgePreferences prefs = FModel.getPreferences();
-                if (prefs.getPref(FPref.UI_CJK_FONT).equals("") &&
+                if (prefs.getPref(FPref.UI_CJK_FONT).isEmpty() &&
                         (newValue.equals("zh-CN") || newValue.equals("ja-JP"))) {
                     String message = "Please download CJK font (from \"Files\"), and set it before change language.";
                     if (newValue.equals("zh-CN")) {
@@ -136,10 +136,10 @@ public class SettingsPage extends TabPage<SettingsScreen> {
                     }
                 }
             }, 0);
-            lstSettings.addItem(new BooleanSetting(FPref.UI_ANDROID_MINIMIZE_ON_SCRLOCK,
+            /*lstSettings.addItem(new BooleanSetting(FPref.UI_ANDROID_MINIMIZE_ON_SCRLOCK,
                 Forge.getLocalizer().getMessage("lblMinimizeScreenLock"),
                 Forge.getLocalizer().getMessage("nlMinimizeScreenLock")),
-               0);
+               0);*/
         } else {
             //fullscreen
             lstSettings.addItem(new BooleanSetting(FPref.UI_FULLSCREEN_MODE,
@@ -214,6 +214,11 @@ public class SettingsPage extends TabPage<SettingsScreen> {
                 Forge.getLocalizer().getMessage("cbManaBurn"),
                 Forge.getLocalizer().getMessage("nlManaBurn")),
                 1);
+        lstSettings.addItem(new BooleanSetting(FPref.LEGACY_ORDER_COMBATANTS,
+                        Forge.getLocalizer().getMessage("cbOrderCombatants"),
+                        Forge.getLocalizer().getMessage("nlOrderCombatants")),
+                1);
+
         lstSettings.addItem(new BooleanSetting(FPref.UI_MANA_LOST_PROMPT,
                 Forge.getLocalizer().getMessage("cbManaLostPrompt"),
                 Forge.getLocalizer().getMessage("nlManaLostPrompt")),
@@ -233,13 +238,20 @@ public class SettingsPage extends TabPage<SettingsScreen> {
             public void valueChanged(String newValue) {
                 super.valueChanged(newValue);
                 AiProfileUtil.setAiSideboardingMode(AiProfileUtil.AISideboardingMode.normalizedValueOf(newValue));
-                System.out.println(AiProfileUtil.getAISideboardingMode());
             }
         }, 1);
         lstSettings.addItem(new BooleanSetting(FPref.MATCH_EXPERIMENTAL_RESTORE,
                 Forge.getLocalizer().getMessage("cbExperimentalRestore"),
                 Forge.getLocalizer().getMessage("nlExperimentalRestore")),
                 1);
+        lstSettings.addItem(new CustomSelectSetting(FPref.MATCH_AI_TIMEOUT, Forge.getLocalizer().getMessage("cbAITimeout"),
+                Forge.getLocalizer().getMessage("nlAITimeout"),
+                Lists.newArrayList("5", "10", "60", "120", "240", "300", "600")),
+                1);
+        lstSettings.addItem(new BooleanSetting(FPref.UI_ORDER_HAND,
+                Forge.getLocalizer().getMessage("cbOrderHand"),
+                Forge.getLocalizer().getMessage("nlOrderHand")),
+        1);
         lstSettings.addItem(new BooleanSetting(FPref.FILTERED_HANDS,
                 Forge.getLocalizer().getMessage("cbFilteredHands"),
                 Forge.getLocalizer().getMessage("nlFilteredHands")),
@@ -247,10 +259,6 @@ public class SettingsPage extends TabPage<SettingsScreen> {
         lstSettings.addItem(new BooleanSetting(FPref.UI_CLONE_MODE_SOURCE,
                 Forge.getLocalizer().getMessage("cbCloneImgSource"),
                 Forge.getLocalizer().getMessage("nlCloneImgSource")),
-                1);
-        lstSettings.addItem(new BooleanSetting(FPref.MATCHPREF_PROMPT_FREE_BLOCKS,
-                Forge.getLocalizer().getMessage("cbPromptFreeBlocks"),
-                Forge.getLocalizer().getMessage("nlPromptFreeBlocks")),
                 1);
         lstSettings.addItem(new BooleanSetting(FPref.UI_DETAILED_SPELLDESC_IN_PROMPT,
                 Forge.getLocalizer().getMessage("cbDetailedPaymentDesc"),
@@ -478,7 +486,7 @@ public class SettingsPage extends TabPage<SettingsScreen> {
                     @Override
                     public void select() {
                         super.select();
-                        ImageCache.disposeTextures();
+                        ImageCache.getInstance().disposeTextures();
                     }
                 },
                 4);
@@ -581,8 +589,7 @@ public class SettingsPage extends TabPage<SettingsScreen> {
             public void valueChanged(String newValue) {
                 super.valueChanged(newValue);
                 Forge.enableUIMask = FModel.getPreferences().getPref(FPref.UI_ENABLE_BORDER_MASKING);
-                ImageCache.clearGeneratedCards();
-                ImageCache.disposeTextures();
+                ImageCache.getInstance().disposeTextures();
             }
         }, 4);
         lstSettings.addItem(new BooleanSetting(FPref.UI_ENABLE_PRELOAD_EXTENDED_ART,

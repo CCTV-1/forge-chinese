@@ -7,7 +7,6 @@ SVar:DBStun:DB$ PutCounter | UnlessCost$ PayEnergy<X> | UnlessPayer$ You | Unles
 SVar:Max:Count$YourCountersEnergy
 SVar:X:Count$ChosenNumber
 AlternateMode:Modal
-DeckHints:Ability$Energy
 Oracle:Tap all creatures target player controls. You may pay X {E}, then choose up to X creatures tapped this way. Put a stun counter on each of them. (If a permanent with a stun counter would become untapped, remove one from it instead.)
 
 ALTERNATE
@@ -15,6 +14,7 @@ ALTERNATE
 Name:Orderly Plaza
 ManaCost:no cost
 Types:Land
-K:CARDNAME enters the battlefield tapped.
+R:Event$ Moved | ValidCard$ Card.Self | Destination$ Battlefield | ReplacementResult$ Updated | ReplaceWith$ ETBTapped | Description$ CARDNAME enters tapped.
+SVar:ETBTapped:DB$ Tap | Defined$ Self | ETB$ True
 A:AB$ Mana | Cost$ T | Produced$ Combo W U | SpellDescription$ Add {W} or {U}.
-Oracle:Orderly Plaza enters the battlefield tapped.\n{T}: Add {W} or {U}.
+Oracle:Orderly Plaza enters tapped.\n{T}: Add {W} or {U}.

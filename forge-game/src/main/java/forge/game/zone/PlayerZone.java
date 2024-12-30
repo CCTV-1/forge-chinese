@@ -17,9 +17,7 @@
  */
 package forge.game.zone;
 
-import com.google.common.base.Predicate;
 import com.google.common.collect.Iterables;
-
 import forge.card.CardStateName;
 import forge.game.card.Card;
 import forge.game.card.CardLists;
@@ -27,6 +25,8 @@ import forge.game.keyword.Keyword;
 import forge.game.player.Player;
 import forge.game.spellability.SpellAbility;
 import forge.util.Lang;
+
+import java.util.function.Predicate;
 
 /**
  * <p>
@@ -41,17 +41,12 @@ public class PlayerZone extends Zone {
 
     // the this is not the owner of the card
     private static Predicate<Card> alienCardsActivationFilter(final Player who) {
-        return new Predicate<Card>() {
-            @Override
-            public boolean apply(final Card c) {
-                return !c.mayPlay(who).isEmpty() || c.mayPlayerLook(who);
-            }
-        };
+        return c -> !c.mayPlay(who).isEmpty() || c.mayPlayerLook(who);
     }
 
     private final class OwnCardsActivationFilter implements Predicate<Card> {
         @Override
-        public boolean apply(final Card c) {
+        public boolean test(final Card c) {
             if (c.mayPlayerLook(c.getController())) {
                 return true;
             }
@@ -111,6 +106,9 @@ public class PlayerZone extends Zone {
 
     @Override
     protected void onChanged() {
+        if (getZoneType() == ZoneType.Hand && player.getController().isOrderedZone()) {
+            sort();
+        }
         player.updateZoneForView(this);
     }
 

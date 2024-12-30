@@ -760,7 +760,13 @@ public class FSkin {
     public static SkinIcon getIcon(final FSkinProp s0) {
         final SkinIcon icon = SkinIcon.icons.get(s0);
         if (icon == null) {
-            throw new NullPointerException("Can't find an icon for FSkinProp " + s0);
+            final SkinIcon blank = SkinIcon.icons.get(FSkinProp.ICO_BLANK);
+            if (blank == null) // if blank is null at this point then the skin is bugged or GC?
+                throw new NullPointerException("Can't find an icon for FSkinProp " + s0);
+            else { // this should be 2 or less unless a new required image icon is needed.
+                System.err.println("Missing image icon for FSkinProp " + s0 + ". Blank image will be used instead.");
+                return blank;
+            }
         }
         return icon;
     }
@@ -940,11 +946,7 @@ public class FSkin {
 
     /** @return {@link java.awt.font} */
     private static Font getFixedFont(final int size) {
-        Font fixedFont = fixedFonts.get(size);
-        if (fixedFont == null) {
-            fixedFont = new Font("Monospaced", Font.PLAIN, size);
-            fixedFonts.put(size, fixedFont);
-        }
+        Font fixedFont = fixedFonts.computeIfAbsent(size, s -> new Font("Monospaced", Font.PLAIN, s));
         return fixedFont;
     }
 

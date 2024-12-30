@@ -17,24 +17,15 @@
  */
 package forge.ai.ability;
 
-import java.util.List;
-
-import com.google.common.base.Predicate;
-import com.google.common.collect.Iterables;
-
 import forge.ai.ComputerUtilCard;
 import forge.ai.SpellAbilityAi;
-import forge.game.card.Card;
-import forge.game.card.CardCollection;
-import forge.game.card.CardCollectionView;
-import forge.game.card.CardLists;
-import forge.game.card.CardPredicates;
-import forge.game.card.CounterEnumType;
-import forge.game.card.CounterType;
+import forge.game.card.*;
 import forge.game.keyword.Keyword;
 import forge.game.player.Player;
 import forge.game.zone.ZoneType;
 import forge.util.Aggregates;
+
+import java.util.List;
 
 
 /**
@@ -66,7 +57,7 @@ public abstract class CountersAi extends SpellAbilityAi {
         Card choice;
 
         // opponent can always order it so that he gets 0
-        if (amount == 1 && Iterables.any(ai.getOpponents().getCardsIn(ZoneType.Battlefield), CardPredicates.nameEquals("Vorinclex, Monstrous Raider"))) {
+        if (amount == 1 && ai.getOpponents().getCardsIn(ZoneType.Battlefield).anyMatch(CardPredicates.nameEquals("Vorinclex, Monstrous Raider"))) {
             return null;
         }
 
@@ -109,12 +100,7 @@ public abstract class CountersAi extends SpellAbilityAi {
                 choice = ComputerUtilCard.getBestLandToAnimate(list);
             }
         } else if (type.equals("DIVINITY")) {
-            final CardCollection boon = CardLists.filter(list, new Predicate<Card>() {
-                @Override
-                public boolean apply(final Card c) {
-                    return c.getCounters(CounterEnumType.DIVINITY) == 0;
-                }
-            });
+            final CardCollection boon = CardLists.filter(list, c -> c.getCounters(CounterEnumType.DIVINITY) == 0);
             choice = ComputerUtilCard.getMostExpensivePermanentAI(boon);
         } else if (CounterType.get(type).isKeywordCounter()) {
             choice = ComputerUtilCard.getBestCreatureAI(CardLists.getNotKeyword(list, type));
