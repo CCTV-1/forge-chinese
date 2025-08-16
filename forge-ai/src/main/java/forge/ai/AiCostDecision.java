@@ -47,6 +47,14 @@ public class AiCostDecision extends CostDecisionMakerBase {
     }
 
     @Override
+    public PaymentDecision visit(CostBehold cost) {
+        final String type = cost.getType();
+        CardCollectionView hand = player.getCardsIn(cost.getRevealFrom());
+        hand = CardLists.getValidCards(hand, type.split(";"), player, source, ability);
+        return hand.isEmpty() ? null : PaymentDecision.card(getBestCreatureAI(hand));
+    }
+
+    @Override
     public PaymentDecision visit(CostChooseColor cost) {
         int c = cost.getAbilityAmount(ability);
         List<String> choices = player.getController().chooseColors("Color", ability, c, c,
@@ -759,6 +767,12 @@ public class AiCostDecision extends CostDecisionMakerBase {
     public PaymentDecision visit(CostRemoveCounter cost) {
         final String amount = cost.getAmount();
         final String type = cost.getType();
+        final GameEntityCounterTable counterTable = new GameEntityCounterTable();
+
+        // TODO Help AI filter card with most useless counters and put those counters in countertable for things like
+        //  Moxite Refinery, similar to CostRemoveAnyCounter
+        //  Probably a lot of that decision making can be re-used or pulled out for both PaymentDecisions to use
+        if (cost.counter == null) return null;
 
         int c;
 
@@ -787,7 +801,8 @@ public class AiCostDecision extends CostDecisionMakerBase {
             }
             for (Card card : typeList) {
                 if (card.getCounters(cost.counter) >= c) {
-                    return PaymentDecision.card(card, c);
+                    counterTable.put(null, card, cost.counter, c);
+                    return PaymentDecision.counters(counterTable);
                 }
             }
             return null;
@@ -798,7 +813,8 @@ public class AiCostDecision extends CostDecisionMakerBase {
             return null;
         }
 
-        return PaymentDecision.card(source, c);
+        counterTable.put(null, source, cost.counter, c);
+        return PaymentDecision.counters(counterTable);
     }
 
     @Override

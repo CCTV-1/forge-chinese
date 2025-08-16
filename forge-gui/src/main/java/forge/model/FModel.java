@@ -53,6 +53,7 @@ import forge.item.PaperCardPredicates;
 import forge.itemmanager.ItemManagerConfig;
 import forge.localinstance.achievements.*;
 import forge.localinstance.properties.ForgeConstants;
+import forge.localinstance.properties.ForgeNetPreferences;
 import forge.localinstance.properties.ForgePreferences;
 import forge.localinstance.properties.ForgePreferences.FPref;
 import forge.player.GamePlayerUtil;
@@ -83,7 +84,7 @@ public final class FModel {
     private static QuestPreferences questPreferences;
     private static ConquestPreferences conquestPreferences;
     private static ForgePreferences preferences;
-
+    private static ForgeNetPreferences netPreferences;
     private static Map<GameType, AchievementCollection> achievements;
 
     // Someone should take care of 2 gauntlets here
@@ -103,7 +104,7 @@ public final class FModel {
     private static GameFormat.Collection formats;
     private static ItemPool<PaperCard> uniqueCardsNoAlt, allCardsNoAlt, planechaseCards, archenemyCards,
             brawlCommander, oathbreakerCommander, tinyLeadersCommander, commanderPool,
-            avatarPool, conspiracyPool, dungeonPool, attractionPool;
+            avatarPool, conspiracyPool, dungeonPool, attractionPool, contraptionPool;
 
     public static void initialize(final IProgressBar progressBar, Function<ForgePreferences, Void> adjustPrefs) {
         //init version to log
@@ -230,6 +231,7 @@ public final class FModel {
         }
         questPreferences = new QuestPreferences();
         conquestPreferences = new ConquestPreferences();
+        netPreferences = new ForgeNetPreferences();
         fantasyBlocks = new StorageBase<>("Custom blocks", new CardBlock.Reader(ForgeConstants.BLOCK_DATA_DIR + "fantasyblocks.txt", magicDb.getEditions()));
         themedChaosDrafts = new StorageBase<>("Themed Chaos Drafts", new ThemedChaosDraft.Reader(ForgeConstants.BLOCK_DATA_DIR + "chaosdraftthemes.txt"));
         planes = new StorageBase<>("Conquest planes", new ConquestPlane.Reader(ForgeConstants.CONQUEST_PLANES_DIR + "planes.txt"));
@@ -286,6 +288,7 @@ public final class FModel {
         archenemyCards = getArchenemyCards();
         planechaseCards = getPlanechaseCards();
         attractionPool = getAttractionPool();
+        contraptionPool = getContraptionPool();
         if (GuiBase.getInterface().isLibgdxPort()) {
             //preload mobile Itempool
             uniqueCardsNoAlt = getUniqueCardsNoAlt();
@@ -394,6 +397,14 @@ public final class FModel {
                     CardRulesPredicates.IS_ATTRACTION)), PaperCard.class);
         return attractionPool;
     }
+
+    public static ItemPool<PaperCard> getContraptionPool() {
+        if(contraptionPool == null)
+            return ItemPool.createFrom(getMagicDb().getVariantCards().getAllCards(PaperCardPredicates.fromRules(
+                    CardRulesPredicates.IS_CONTRAPTION)), PaperCard.class);
+        return contraptionPool;
+    }
+
     private static boolean keywordsLoaded = false;
 
     /**
@@ -468,6 +479,9 @@ public final class FModel {
 
     public static ForgePreferences getPreferences() {
         return preferences;
+    }
+    public static ForgeNetPreferences getNetPreferences() {
+        return netPreferences;
     }
 
     public static AchievementCollection getAchievements(GameType gameType) {

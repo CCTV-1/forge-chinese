@@ -105,6 +105,8 @@ public interface IGuiGame {
     void updateLives(Iterable<PlayerView> livesUpdate);
     void updateShards(Iterable<PlayerView> shardsUpdate);
 
+    void updateDependencies();
+
     void setPanelSelection(CardView hostCard);
 
     SpellAbilityView getAbilityToPlay(CardView hostCard, List<SpellAbilityView> abilities, ITriggerEvent triggerEvent);
@@ -148,7 +150,7 @@ public interface IGuiGame {
 
     <T> List<T> getChoices(String message, int min, int max, List<T> choices);
 
-    <T> List<T> getChoices(String message, int min, int max, List<T> choices, T selected, Function<T, String> display);
+    <T> List<T> getChoices(String message, int min, int max, List<T> choices, List<T> selected, Function<T, String> display);
 
     // Get Integer in range
     Integer getInteger(String message, int min);
@@ -188,6 +190,8 @@ public interface IGuiGame {
     <T> List<T> many(String title, String topCaption, int cnt, List<T> sourceChoices, CardView c);
 
     <T> List<T> many(String title, String topCaption, int min, int max, List<T> sourceChoices, CardView c);
+
+    <T> List<T> many(String title, String topCaption, int min, int max, List<T> sourceChoices, List<T> destChoices, CardView c);
 
     <T> List<T> order(String title, String top, List<T> sourceChoices, CardView c);
 

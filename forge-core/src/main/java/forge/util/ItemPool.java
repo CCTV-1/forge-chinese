@@ -269,13 +269,40 @@ public class ItemPool<T extends InventoryItem> implements Iterable<Entry<T, Inte
         // need not set out-of-sync: either remove did set, or nothing was removed
     }
 
+    public void removeIf(Predicate<T> filter) {
+        items.keySet().removeIf(filter);
+    }
+
+    public void retainIf(Predicate<T> filter) {
+        items.keySet().removeIf(filter.negate());
+    }
+
+    public T find(Predicate<T> filter) {
+        return items.keySet().stream().filter(filter).findFirst().orElse(null);
+    }
+
     public void clear() {
         items.clear();
     }
 
     @Override
     public boolean equals(final Object obj) {
-        return (obj instanceof ItemPool) &&
-                (this.items.equals(((ItemPool)obj).items));
+        return (obj instanceof ItemPool ip) &&
+                (this.items.equals(ip.items));
+    }
+
+    /**
+     * Applies a predicate to this ItemPool's entries.
+     *
+     * @param predicate the Predicate to apply to this ItemPool
+     * @return a new ItemPool made from this ItemPool with only the items that agree with the provided Predicate
+     */
+    public ItemPool<T> getFilteredPool(Predicate<T> predicate) {
+        ItemPool<T> filteredPool = new ItemPool<>(myClass);
+        for (T c : this.items.keySet()) {
+            if (predicate.test(c))
+                filteredPool.add(c, this.items.get(c));
+        }
+        return filteredPool;
     }
 }

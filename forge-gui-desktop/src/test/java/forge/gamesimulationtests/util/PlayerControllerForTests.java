@@ -22,6 +22,7 @@ import forge.deck.Deck;
 import forge.deck.DeckSection;
 import forge.game.*;
 import forge.game.ability.AbilityUtils;
+import forge.game.ability.effects.RollDiceEffect;
 import forge.game.card.*;
 import forge.game.combat.Combat;
 import forge.game.combat.CombatUtil;
@@ -53,10 +54,7 @@ import forge.util.collect.FCollectionView;
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.Pair;
 
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.function.Predicate;
 
 /**
@@ -163,6 +161,11 @@ public class PlayerControllerForTests extends PlayerController {
     @Override
     public CardCollectionView chooseCardsForEffect(CardCollectionView sourceList, SpellAbility sa, String title, int min, int max, boolean isOptional, Map<String, Object> params) {
         return chooseItems(sourceList, max);
+    }
+
+    @Override
+    public List<Card> chooseContraptionsToCrank(List<Card> contraptions) {
+        return contraptions;
     }
 
     @Override
@@ -507,6 +510,11 @@ public class PlayerControllerForTests extends PlayerController {
     }
 
     @Override
+    public int chooseSprocket(Card assignee, boolean forceDifferent) {
+        return forceDifferent && assignee.getSprocket() == 1 ? 2 : 1;
+    }
+
+    @Override
     public PlanarDice choosePDRollToIgnore(List<PlanarDice> rolls) {
         return Aggregates.random(rolls);
     }
@@ -514,6 +522,26 @@ public class PlayerControllerForTests extends PlayerController {
     @Override
     public Integer chooseRollToIgnore(List<Integer> rolls) {
         return Aggregates.random(rolls);
+    }
+
+    @Override
+    public List<Integer> chooseDiceToReroll(List<Integer> rolls) {
+        return new ArrayList<>();
+    }
+
+    @Override
+    public Integer chooseRollToModify(List<Integer> rolls) {
+        return Aggregates.random(rolls);
+    }
+
+    @Override
+    public RollDiceEffect.DieRollResult chooseRollToSwap(List<RollDiceEffect.DieRollResult> rolls) {
+        return Aggregates.random(rolls);
+    }
+
+    @Override
+    public String chooseRollSwapValue(List<String> swapChoices, Integer currentResult, int power, int toughness) {
+        return Aggregates.random(swapChoices);
     }
 
     @Override
@@ -568,6 +596,12 @@ public class PlayerControllerForTests extends PlayerController {
     }
 
     @Override
+    public boolean payCostDuringRoll(final Cost cost, final SpellAbility sa, final FCollectionView<Player> allPayers) {
+        // TODO Auto-generated method stub
+        return false;
+    }
+
+    @Override
     public void orderAndPlaySimultaneousSa(List<SpellAbility> activePlayerSAs) {
         for (final SpellAbility sa : activePlayerSAs) {
             prepareSingleSa(sa.getHostCard(),sa,true);
@@ -594,18 +628,13 @@ public class PlayerControllerForTests extends PlayerController {
 
     @Override
     public boolean playSaFromPlayEffect(SpellAbility tgtSA) {
-        // TODO Auto-generated method stub
-        boolean optional = tgtSA.hasParam("Optional");
+        boolean optional = !tgtSA.getPayCosts().isMandatory();
         boolean noManaCost = tgtSA.hasParam("WithoutManaCost");
         if (tgtSA instanceof Spell) { // Isn't it ALWAYS a spell?
             Spell spell = (Spell) tgtSA;
             // if (spell.canPlayFromEffectAI(player, !optional, noManaCost) || !optional) {  -- could not save this part
             if (spell.canPlay() || !optional) {
-                if (noManaCost) {
-                    ComputerUtil.playSpellAbilityWithoutPayingManaCost(player, tgtSA, getGame());
-                } else {
-                    ComputerUtil.playStack(tgtSA, player, getGame());
-                }
+                ComputerUtil.playStack(tgtSA, player, getGame());
             } else
                 return false; // didn't play spell
         }

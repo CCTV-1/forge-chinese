@@ -153,6 +153,8 @@ public class DeckRecognizer {
                 matchedSection = DeckSection.Planes;
             else if (sectionName.equals("attractions"))
                 matchedSection = DeckSection.Attractions;
+            else if (sectionName.equals("contraptions"))
+                matchedSection = DeckSection.Contraptions;
 
             if (matchedSection == null)  // no match found
                 return null;
@@ -470,7 +472,8 @@ public class DeckRecognizer {
             "side", "sideboard", "sb",
             "main", "card", "mainboard",
             "avatar", "commander", "schemes",
-            "conspiracy", "planes", "deck", "dungeon"};
+            "conspiracy", "planes", "deck", "dungeon",
+            "attractions", "contraptions"};
 
     private static CharSequence[] allCardTypes(){
         List<String> cardTypesList = new ArrayList<>();
@@ -578,7 +581,9 @@ public class DeckRecognizer {
             line = refLine.trim();  // Remove any trailing formatting
 
         // Some websites export split card names with a single slash. Replace with double slash.
-        line = SEARCH_SINGLE_SLASH.matcher(line).replaceFirst(" // ");
+        // Final fantasy cards like Summon: Choco/Mog should be ommited to be recognized. TODO: fix maybe for future cards
+        if (!line.contains("Summon:"))
+            line = SEARCH_SINGLE_SLASH.matcher(line).replaceFirst(" // ");
         if (StringUtils.startsWith(line, ASTERISK))  // markdown lists (tappedout md export)
             line = line.substring(2);
 
@@ -669,7 +674,8 @@ public class DeckRecognizer {
                     return checkAndSetCardToken(pc, edition, cardCount, deckSecFromCardLine,
                                                 currentDeckSection, true);
                 // UNKNOWN card as in the Counterspell|FEM case
-                return Token.UnknownCard(cardName, setCode, cardCount);
+                unknownCardToken = Token.UnknownCard(cardName, setCode, cardCount);
+                continue;
             }
             // ok so we can simply ignore everything but card name - as set code does not exist
             // At this stage, we know the card name exists in the DB so a Card MUST be found
@@ -983,7 +989,7 @@ public class DeckRecognizer {
     private static String getMagicColourLabel(MagicColor.Color magicColor) {
         if (magicColor == null) // Multicolour
             return String.format("%s {W}{U}{B}{R}{G}", getLocalisedMagicColorName("Multicolour"));
-        return String.format("%s %s", getLocalisedMagicColorName(magicColor.getName()), magicColor.getSymbol());
+        return String.format("%s %s", magicColor.getLocalizedName(), magicColor.getSymbol());
     }
 
     private static final HashMap<Integer, String> manaSymbolsMap = new HashMap<Integer, String>() {{
@@ -1002,8 +1008,8 @@ public class DeckRecognizer {
         if (magicColor2 == null || magicColor2 == MagicColor.Color.COLORLESS
                 || magicColor1 == MagicColor.Color.COLORLESS)
             return String.format("%s // %s", getMagicColourLabel(magicColor1), getMagicColourLabel(magicColor2));
-        String localisedName1 = getLocalisedMagicColorName(magicColor1.getName());
-        String localisedName2 = getLocalisedMagicColorName(magicColor2.getName());
+        String localisedName1 = magicColor1.getLocalizedName();
+        String localisedName2 = magicColor2.getLocalizedName();
         String comboManaSymbol = manaSymbolsMap.get(magicColor1.getColormask() | magicColor2.getColormask());
         return String.format("%s/%s {%s}", localisedName1, localisedName2, comboManaSymbol);
     }

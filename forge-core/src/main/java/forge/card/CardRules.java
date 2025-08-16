@@ -53,6 +53,7 @@ public final class CardRules implements ICardCharacteristics {
     private boolean addsWildCardColor;
     private int setColorID;
     private boolean custom;
+    private String path;
 
     public CardRules(ICardFace[] faces, CardSplitType altMode, CardAiHints cah) {
         splitType = altMode;
@@ -108,8 +109,12 @@ public final class CardRules implements ICardCharacteristics {
         // CR 903.4 colors defined by its characteristic-defining abilities
         for (String staticAbility : face.getStaticAbilities()) {
             if (staticAbility.contains("CharacteristicDefining$ True") && staticAbility.contains("SetColor$ All")) {
-                res |= MagicColor.ALL_COLORS;
+                return MagicColor.ALL_COLORS;
             }
+        }
+        // no need to check oracle if it is already all colors
+        if (res == MagicColor.ALL_COLORS) {
+            return res;
         }
         int len = oracleText.length();
         for (int i = 0; i < len; i++) {
@@ -138,7 +143,7 @@ public final class CardRules implements ICardCharacteristics {
     public boolean isVariant() {
         CardType t = getType();
         return t.isVanguard() || t.isScheme() || t.isPlane() || t.isPhenomenon()
-                || t.isConspiracy() || t.isDungeon() || t.isAttraction();
+                || t.isConspiracy() || t.isDungeon() || t.isAttraction() || t.isContraption();
     }
 
     public CardSplitType getSplitType() {
@@ -159,6 +164,24 @@ public final class CardRules implements ICardCharacteristics {
 
     public Iterable<ICardFace> getAllFaces() {
         return Iterables.concat(Arrays.asList(mainPart, otherPart), specializedParts.values());
+    }
+
+    public boolean isTransformable() {
+        if (CardSplitType.Transform == getSplitType()) {
+            return true;
+        }
+        if (CardSplitType.Modal != getSplitType()) {
+            return false;
+        }
+        for (ICardFace face : getAllFaces()) {
+            for (String spell : face.getAbilities()) {
+                if (spell.contains("AB$ SetState") && spell.contains("Mode$ Transform")) {
+                    return true;
+                }
+            }
+            // TODO check keywords if needed
+        }
+        return false;
     }
 
     public ICardFace getWSpecialize() {
@@ -188,6 +211,9 @@ public final class CardRules implements ICardCharacteristics {
 
     public String getNormalizedName() { return normalizedName; }
     public void setNormalizedName(String filename) { normalizedName = filename; }
+
+    public String getPath() { return path; }
+    public void setPath(String path) { this.path = path; }
 
     public CardAiHints getAiHints() {
         return aiHints;
@@ -273,6 +299,10 @@ public final class CardRules implements ICardCharacteristics {
         return getType().isDungeon();
     }
 
+    public boolean hasPrintedPT() {
+        return getPower() != null || getToughness() != null;
+    }
+
     public boolean canBeCommander() {
         if (mainPart.getOracleText().contains(" is your commander, choose a color before the game begins.")) {
             addsWildCardColor = true;
@@ -281,14 +311,12 @@ public final class CardRules implements ICardCharacteristics {
             return true;
         }
         CardType type = mainPart.getType();
-        boolean creature = type.isCreature();
-        for (String staticAbility : mainPart.getStaticAbilities()) { // Check for Grist
-            if (staticAbility.contains("CharacteristicDefining$ True") && staticAbility.contains("AddType$ Creature")) {
-                creature = true;
-                break;
-            }
+        if (!type.isLegendary()) {
+            return false;
         }
-        if (type.isLegendary() && creature) {
+        if (canBeCreature() || type.isVehicle() || (
+                type.isSpacecraft() && getPower() != null)) {
+            // Spacecraft need printed PT
             return true;
         }
         return false;
@@ -356,15 +384,8 @@ public final class CardRules implements ICardCharacteristics {
         if (!type.isLegendary()) {
             return false;
         }
-        if (type.isCreature() || type.isPlaneswalker()) {
+        if (canBeCreature() || type.isPlaneswalker()) {
             return true;
-        }
-
-        // Grist is checked above, but new cards might work this way
-        for (String staticAbility : mainPart.getStaticAbilities()) {
-            if (staticAbility.contains("CharacteristicDefining$ True") && staticAbility.contains("AddType$ Creature")) {
-                return true;
-            }
         }
         return false;
     }
@@ -374,12 +395,18 @@ public final class CardRules implements ICardCharacteristics {
         if (!type.isLegendary()) {
             return false;
         }
-        if (type.isCreature() || type.isPlaneswalker()) {
+        if (canBeCreature() || type.isPlaneswalker()) {
             return true;
         }
+        return false;
+    }
 
-        // Grist is checked above, but new cards might work this way
-        for (String staticAbility : mainPart.getStaticAbilities()) {
+    public boolean canBeCreature() {
+        CardType type = mainPart.getType();
+        if (type.isCreature()) {
+            return true;
+        }
+        for (String staticAbility : mainPart.getStaticAbilities()) { // Check for Grist
             if (staticAbility.contains("CharacteristicDefining$ True") && staticAbility.contains("AddType$ Creature")) {
                 return true;
             }
@@ -400,6 +427,7 @@ public final class CardRules implements ICardCharacteristics {
     }
 
     public int getSetColorID() {
+        //Could someday generalize this to support other kinds of markings.
         return setColorID;
     }
 
@@ -473,6 +501,7 @@ public final class CardRules implements ICardCharacteristics {
          * Reset all fields to parse next card (to avoid allocating new CardRulesReader N times)
          */
         public final void reset() {
+            this.setColorID = 0;
             this.curFace = 0;
             this.faces[0] = null;
             this.faces[1] = null;
@@ -807,7 +836,7 @@ public final class CardRules implements ICardCharacteristics {
     public boolean hasStartOfKeyword(final String k, ICardFace cf) {
         for (final String inst : cf.getKeywords()) {
             final String[] parts = inst.split(":");
-            if (parts[0].equals(k)) {
+            if ((parts[0]).equalsIgnoreCase(k)) {
                 return true;
             }
         }

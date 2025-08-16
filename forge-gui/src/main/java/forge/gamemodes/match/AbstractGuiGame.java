@@ -249,11 +249,10 @@ public abstract class AbstractGuiGame implements IGuiGame, IMayViewCards {
                 }
                 return true; //original can always be shown if not a face down that can't be shown
             case Flipped:
-            case Transformed:
             case Meld:
-            case Modal:
+            case Backside:
                 return true;
-            case Adventure:
+            case Secondary:
                 if (cv.isFaceDown()) {
                     return getCurrentPlayer() == null || cv.canFaceDownBeShownToAny(getLocalPlayers());
                 }
@@ -736,12 +735,17 @@ public abstract class AbstractGuiGame implements IGuiGame, IMayViewCards {
 
     @Override
     public <T> List<T> many(final String title, final String topCaption, final int min, final int max, final List<T> sourceChoices, final CardView c) {
+        return many(title, topCaption, min, max, sourceChoices, null, c);
+    }
+
+    @Override
+    public <T> List<T> many(String title, String topCaption, int min, int max, List<T> sourceChoices, List<T> destChoices, CardView c) {
         if (max == 1) {
             return getChoices(title, min, max, sourceChoices);
         }
         final int m2 = min >= 0 ? sourceChoices.size() - min : -1;
         final int m1 = max >= 0 ? sourceChoices.size() - max : -1;
-        return order(title, topCaption, m1, m2, sourceChoices, null, c, false);
+        return order(title, topCaption, m1, m2, sourceChoices, destChoices, c, false);
     }
 
     @Override
@@ -840,6 +844,9 @@ public abstract class AbstractGuiGame implements IGuiGame, IMayViewCards {
             awaitNextInputTimer = null;
         }
         daytime = null;
+    }
+
+    public void updateDependencies() {        
     }
     // End of Choice code
 }

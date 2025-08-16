@@ -18,8 +18,8 @@ import java.util.*;
 import java.util.function.Predicate;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-
 
 /**
  * The class holding game invariants, such as cards, editions, game formats. All that data, which is not supposed to be changed by player
@@ -95,12 +95,12 @@ public class StaticData {
             if (!loadNonLegalCards) {
                 for (CardEdition e : editions) {
                     if (e.getType() == CardEdition.Type.FUNNY || e.getBorderColor() == CardEdition.BorderColor.SILVER) {
-                        List<CardEdition.CardInSet> eternalCards = e.getFunnyEternalCards();
+                        List<CardEdition.EditionEntry> eternalCards = e.getFunnyEternalCards();
 
-                        for (CardEdition.CardInSet cis : e.getAllCardsInSet()) {
+                        for (CardEdition.EditionEntry cis : e.getAllCardsInSet()) {
                             if (eternalCards.contains(cis))
                                 continue;
-                            funnyCards.add(cis.name);
+                            funnyCards.add(cis.name());
                         }
                     }
                 }
@@ -217,6 +217,9 @@ public class StaticData {
     }
 
     public CardEdition getCardEdition(String setCode) {
+        if (CardEdition.UNKNOWN_CODE.equals(setCode)) {
+            return CardEdition.UNKNOWN;
+        }
         CardEdition edition = this.editions.get(setCode);
         return edition;
     }
@@ -246,6 +249,15 @@ public class StaticData {
                 commonCards.loadCard(cardName, setCode, rules);
             }
         }
+    }
+
+    /**
+     * Retrieve a PaperCard by looking at all available card databases for any matching print.
+     * @param cardName The name of the card
+     * @return PaperCard instance found in one of the available CardDb databases, or <code>null</code> if not found.
+     */
+    public PaperCard fetchCard(final String cardName) {
+        return fetchCard(cardName, null, null);
     }
 
     /**
@@ -772,18 +784,21 @@ public class StaticData {
         Queue<String> TOKEN_Q = new ConcurrentLinkedQueue<>();
         boolean nifHeader = false;
         boolean cniHeader = false;
+        final Pattern funnyCardCollectorNumberPattern = Pattern.compile("^F\\d+");
         for (CardEdition e : editions) {
             if (CardEdition.Type.FUNNY.equals(e.getType()))
                 continue;
 
             Map<String, Pair<Boolean, Integer>> cardCount = new HashMap<>();
             List<CompletableFuture<?>> futures = new ArrayList<>();
-            for (CardEdition.CardInSet c : e.getAllCardsInSet()) {
-                if (cardCount.containsKey(c.name)) {
-                    cardCount.put(c.name, Pair.of(c.collectorNumber != null && c.collectorNumber.startsWith("F"), cardCount.get(c.name).getRight() + 1));
-                } else {
-                    cardCount.put(c.name, Pair.of(c.collectorNumber != null && c.collectorNumber.startsWith("F"), 1));
+            for (CardEdition.EditionEntry c : e.getObtainableCards()) {
+                int amount = 1;
+
+                if (cardCount.containsKey(c.name())) {
+                    amount = cardCount.get(c.name()).getRight() + 1;
                 }
+
+                cardCount.put(c.name(), Pair.of(c.collectorNumber() != null && funnyCardCollectorNumberPattern.matcher(c.collectorNumber()).matches(), amount));
             }
 
             // loop through the cards in this edition, considering art variations...
@@ -844,9 +859,9 @@ public class StaticData {
             futures.clear();
 
             // TODO: Audit token images here...
-            for(Map.Entry<String, Integer> tokenEntry : e.getTokens().entrySet()) {
+            for(Map.Entry<String, Collection<CardEdition.EditionEntry>> tokenEntry : e.getTokens().asMap().entrySet()) {
                 final String name = tokenEntry.getKey();
-                final int artIndex = tokenEntry.getValue();
+                final int artIndex = tokenEntry.getValue().size();
                 try {
                     PaperToken token = getAllTokens().getToken(name, e.getCode());
                     if (token == null) {
@@ -982,5 +997,24 @@ public class StaticData {
             }
         }
         return false;
+    }
+    public String getOtherImageKey(String name, String set) {
+        if (this.editions.get(set) != null) {
+            String realSetCode = this.editions.get(set).getOtherSet(name);
+            if (realSetCode != null) {
+                CardEdition.EditionEntry ee = this.editions.get(realSetCode).findOther(name);
+                if (ee != null) { // TODO add collector Number and new ImageKey format
+                    return ImageKeys.getTokenKey(String.format("%s|%s|%s", name, realSetCode, ee.collectorNumber()));
+                }
+            }
+        }
+        for (CardEdition e : this.editions) {
+            CardEdition.EditionEntry ee = e.findOther(name);
+            if (ee != null) { // TODO add collector Number and new ImageKey format
+                return ImageKeys.getTokenKey(String.format("%s|%s|%s", name, e.getCode(), ee.collectorNumber()));
+            }
+        }
+        // final fallback
+        return ImageKeys.getTokenKey(name);
     }
 }

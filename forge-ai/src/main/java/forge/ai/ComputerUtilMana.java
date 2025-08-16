@@ -158,7 +158,7 @@ public class ComputerUtilMana {
                 }
 
                 // Mana abilities on the same card
-                String shardMana = shard.toString().replaceAll("\\{", "").replaceAll("\\}", "");
+                String shardMana = shard.toShortString();
 
                 boolean payWithAb1 = ability1.getManaPart().mana(ability1).contains(shardMana);
                 boolean payWithAb2 = ability2.getManaPart().mana(ability2).contains(shardMana);
@@ -226,7 +226,7 @@ public class ComputerUtilMana {
     }
 
     public static SpellAbility chooseManaAbility(ManaCostBeingPaid cost, SpellAbility sa, Player ai, ManaCostShard toPay,
-            Collection<SpellAbility> saList, boolean checkCosts) {
+            Collection<SpellAbility> maList, boolean checkCosts) {
         Card saHost = sa.getHostCard();
 
         // CastTotalManaSpent (AIPreference:ManaFrom$Type or AIManaPref$ Type)
@@ -240,12 +240,12 @@ public class ComputerUtilMana {
             manaSourceType = sa.getParam("AIManaPref");
         }
         if (manaSourceType != "") {
-            List<SpellAbility> filteredList = Lists.newArrayList(saList);
+            List<SpellAbility> filteredList = Lists.newArrayList(maList);
             switch (manaSourceType) {
                 case "Snow":
                     filteredList.sort((ab1, ab2) -> ab1.getHostCard() != null && ab1.getHostCard().isSnow()
                             && ab2.getHostCard() != null && !ab2.getHostCard().isSnow() ? -1 : 1);
-                    saList = filteredList;
+                    maList = filteredList;
                     break;
                 case "Treasure":
                     // Try to spend only one Treasure if possible
@@ -253,22 +253,22 @@ public class ComputerUtilMana {
                             && ab2.getHostCard() != null && !ab2.getHostCard().getType().hasSubtype("Treasure") ? -1 : 1);
                     SpellAbility first = filteredList.get(0);
                     if (first.getHostCard() != null && first.getHostCard().getType().hasSubtype("Treasure")) {
-                        saList.remove(first);
+                        maList.remove(first);
                         List<SpellAbility> updatedList = Lists.newArrayList();
                         updatedList.add(first);
-                        updatedList.addAll(saList);
-                        saList = updatedList;
+                        updatedList.addAll(maList);
+                        maList = updatedList;
                     }
                     break;
                 case "TreasureMax":
                     // Ok to spend as many Treasures as possible
                     filteredList.sort((ab1, ab2) -> ab1.getHostCard() != null && ab1.getHostCard().getType().hasSubtype("Treasure")
                             && ab2.getHostCard() != null && !ab2.getHostCard().getType().hasSubtype("Treasure") ? -1 : 1);
-                    saList = filteredList;
+                    maList = filteredList;
                     break;
                 case "NotSameCard":
                     String hostName = sa.getHostCard().getName();
-                    saList = filteredList.stream()
+                    maList = filteredList.stream()
                             .filter(saPay -> !saPay.getHostCard().getName().equals(hostName))
                             .collect(Collectors.toList());
                     break;
@@ -277,7 +277,7 @@ public class ComputerUtilMana {
             }
         }
 
-        for (final SpellAbility ma : saList) {
+        for (final SpellAbility ma : maList) {
             // this rarely seems like a good idea
             if (ma.getHostCard() == saHost) {
                 continue;
@@ -336,7 +336,7 @@ public class ComputerUtilMana {
                     // Deprioritize Cavern of Souls, try to pay generic mana with it instead to use the NoCounter ability
                     continue;
                 } else if (toPay == ManaCostShard.GENERIC || toPay == ManaCostShard.X) {
-                    for (SpellAbility ab : saList) {
+                    for (SpellAbility ab : maList) {
                         if (ab.isManaAbility() && ab.getManaPart().isAnyMana() && ab.hasParam("AddsNoCounter")) {
                             if (!ab.getHostCard().isTapped()) {
                                 paymentChoice = ab;
@@ -590,12 +590,12 @@ public class ComputerUtilMana {
         while (!cost.isPaid()) {
             toPay = getNextShardToPay(cost, sourcesForShards);
 
-            Collection<SpellAbility> saList = sourcesForShards.get(toPay);
-            if (saList == null) {
+            Collection<SpellAbility> maList = sourcesForShards.get(toPay);
+            if (maList == null) {
                 break;
             }
 
-            SpellAbility saPayment = chooseManaAbility(cost, sa, ai, toPay, saList, true);
+            SpellAbility saPayment = chooseManaAbility(cost, sa, ai, toPay, maList, true);
             if (saPayment == null) {
                 boolean lifeInsteadOfBlack = toPay.isBlack() && ai.hasKeyword("PayLifeInsteadOf:B");
                 if ((!toPay.isPhyrexian() && !lifeInsteadOfBlack) || !ai.canPayLife(2, false, sa)) {
@@ -642,26 +642,31 @@ public class ComputerUtilMana {
         List<SpellAbility> paymentList = Lists.newArrayList();
         final ManaPool manapool = ai.getManaPool();
 
-        // Apply the color/type conversion matrix if necessary
-        manapool.restoreColorReplacements();
-        CardPlayOption mayPlay = sa.getMayPlayOption();
-        if (!effect) {
-            if (sa.isSpell() && mayPlay != null) {
-                mayPlay.applyManaConvert(manapool);
-            } else if (sa.isActivatedAbility() && sa.getGrantorStatic() != null && sa.getGrantorStatic().hasParam("ManaConversion")) {
-                AbilityUtils.applyManaColorConversion(manapool, sa.getGrantorStatic().getParam("ManaConversion"));
+        // Apply color/type conversion matrix if necessary (already done via autopay)
+        if (ai.getControllingPlayer() == null) {
+            manapool.restoreColorReplacements();
+            CardPlayOption mayPlay = sa.getMayPlayOption();
+            if (!effect) {
+                if (sa.isSpell() && mayPlay != null) {
+                    mayPlay.applyManaConvert(manapool);
+                } else if (sa.isActivatedAbility() && sa.getGrantorStatic() != null && sa.getGrantorStatic().hasParam("ManaConversion")) {
+                    AbilityUtils.applyManaColorConversion(manapool, sa.getGrantorStatic().getParam("ManaConversion"));
+                }
             }
+            if (sa.hasParam("ManaConversion")) {
+                AbilityUtils.applyManaColorConversion(manapool, sa.getParam("ManaConversion"));
+            }
+            StaticAbilityManaConvert.manaConvert(manapool, ai, sa.getHostCard(), effect && !sa.isCastFromPlayEffect() ? null : sa);
         }
-        if (sa.hasParam("ManaConversion")) {
-            AbilityUtils.applyManaColorConversion(manapool, sa.getParam("ManaConversion"));
-        }
-        StaticAbilityManaConvert.manaConvert(manapool, ai, sa.getHostCard(), effect && !sa.isCastFromPlayEffect() ? null : sa);
 
+        // not worth checking if it makes sense to not spend floating first
         if (manapool.payManaCostFromPool(cost, sa, test, manaSpentToPay)) {
             CostPayment.handleOfferings(sa, test, cost.isPaid());
-            return true;    // paid all from floating mana
+            // paid all from floating mana
+            return true;
         }
 
+        int phyLifeToPay = 2;
         boolean purePhyrexian = cost.containsOnlyPhyrexianMana();
         boolean hasConverge = sa.getHostCard().hasConverge();
         ListMultimap<ManaCostShard, SpellAbility> sourcesForShards = getSourcesForShards(cost, sa, ai, test, checkPlayable, hasConverge);
@@ -689,12 +694,11 @@ public class ComputerUtilMana {
             }
 
             if (sourcesForShards == null && !purePhyrexian) {
-                break;    // no mana abilities to use for paying
+                // no mana abilities to use for paying
+                break;
             }
 
             toPay = getNextShardToPay(cost, sourcesForShards);
-
-            boolean lifeInsteadOfBlack = toPay.isBlack() && ai.hasKeyword("PayLifeInsteadOf:B");
 
             Collection<SpellAbility> saList = null;
             if (hasConverge &&
@@ -748,9 +752,14 @@ public class ComputerUtilMana {
             }
 
             if (saPayment == null) {
-                if ((!toPay.isPhyrexian() && !lifeInsteadOfBlack) || !ai.canPayLife(2, false, sa)
-                        || (ai.getLife() <= 2 && !ai.cantLoseForZeroOrLessLife())) {
-                    break; // cannot pay
+                boolean lifeInsteadOfBlack = toPay.isBlack() && ai.hasKeyword("PayLifeInsteadOf:B");
+                if ((!toPay.isPhyrexian() && !lifeInsteadOfBlack) || !ai.canPayLife(phyLifeToPay, false, sa)
+                        || (ai.getLife() <= phyLifeToPay && !ai.cantLoseForZeroOrLessLife())) {
+                    // cannot pay
+                    break;
+                }
+                if (test) {
+                    phyLifeToPay += 2;
                 }
 
                 if (sa.hasParam("AIPhyrexianPayment")) {
@@ -954,7 +963,6 @@ public class ComputerUtilMana {
         if (checkCosts) {
             // Check if AI can still play this mana ability
             ma.setActivatingPlayer(ai);
-            // if the AI can't pay the additional costs skip the mana ability
             if (!CostPayment.canPayAdditionalCosts(ma.getPayCosts(), ma, false)) {
                 return false;
             } else if (ma.getRestrictions() != null && ma.getRestrictions().isInstantSpeed()) {
@@ -972,8 +980,9 @@ public class ComputerUtilMana {
                     continue;
                 }
 
-                if ("Any".equals(s) || ai.getManaPool().canPayForShardWithColor(toPay, ManaAtom.fromName(s)))
+                if ("Any".equals(s) || ai.getManaPool().canPayForShardWithColor(toPay, ManaAtom.fromName(s))){
                     return true;
+                }
             }
             return false;
         }
@@ -1280,7 +1289,13 @@ public class ComputerUtilMana {
             card.setCastFrom(card.getZone() != null ? card.getZone() : null);
         }
 
-        Cost payCosts = CostAdjustment.adjust(cost, sa, effect);
+        Cost payCosts;
+        if (test) {
+            payCosts = CostAdjustment.adjust(cost, sa, effect);
+        } else {
+            // when not testing CostPayment already handled raise
+            payCosts = cost;
+        }
         CostPartMana manapart = payCosts != null ? payCosts.getCostMana() : null;
         final ManaCost mana = payCosts != null ? ( manapart == null ? ManaCost.ZERO : manapart.getManaCostFor(sa) ) : ManaCost.NO_COST;
 
@@ -1320,7 +1335,9 @@ public class ComputerUtilMana {
             }
         }
 
-        CostAdjustment.adjust(manaCost, sa, null, test);
+        if (!effect) {
+            CostAdjustment.adjust(manaCost, sa, null, test);
+        }
 
         if ("NumTimes".equals(sa.getParam("Announce"))) { // e.g. the Adversary cycle
             ManaCost mkCost = sa.getPayCosts().getTotalMana();
@@ -1491,7 +1508,7 @@ public class ComputerUtilMana {
                 AbilitySub sub = m.getSubAbility();
                 // We really shouldn't be hardcoding names here. ChkDrawback should just return true for them
                 if (sub != null && !card.getName().equals("Pristine Talisman") && !card.getName().equals("Zhur-Taa Druid")) {
-                    if (!SpellApiToAi.Converter.get(sub.getApi()).chkDrawbackWithSubs(ai, sub)) {
+                    if (!SpellApiToAi.Converter.get(sub).chkDrawbackWithSubs(ai, sub).willingToPlay()) {
                         continue;
                     }
                     needsLimitedResources = true; // TODO: check for good drawbacks (gainLife)
@@ -1571,7 +1588,7 @@ public class ComputerUtilMana {
                 // don't use abilities with dangerous drawbacks
                 AbilitySub sub = m.getSubAbility();
                 if (sub != null) {
-                    if (!SpellApiToAi.Converter.get(sub.getApi()).chkDrawbackWithSubs(ai, sub)) {
+                    if (!SpellApiToAi.Converter.get(sub).chkDrawbackWithSubs(ai, sub).willingToPlay()) {
                         continue;
                     }
                 }

@@ -48,6 +48,7 @@ import forge.game.replacement.ReplacementEffect;
 import forge.game.replacement.ReplacementLayer;
 import forge.game.spellability.SpellAbility;
 import forge.game.staticability.StaticAbility;
+import forge.game.staticability.StaticAbilityMode;
 import forge.game.trigger.Trigger;
 import forge.game.zone.MagicStack;
 import forge.game.zone.ZoneType;
@@ -691,6 +692,8 @@ public class ComputerUtilCard {
     public static boolean canBeBlockedProfitably(final Player ai, Card attacker, boolean checkingOther) {
         AiBlockController aiBlk = new AiBlockController(ai, checkingOther);
         Combat combat = new Combat(ai);
+        // avoid removing original attacker
+        attacker.setCombatLKI(null);
         combat.addAttacker(attacker, ai);
         final List<Card> attackers = Lists.newArrayList(attacker);
         aiBlk.assignBlockersGivenAttackers(combat, attackers);
@@ -916,14 +919,14 @@ public class ComputerUtilCard {
         return MagicColor.Constant.WHITE; // no difference, there was no prominent color
     }
 
-    public static String getMostProminentColor(final CardCollectionView list, final List<String> restrictedToColors) {
+    public static String getMostProminentColor(final CardCollectionView list, final Iterable<String> restrictedToColors) {
         byte colors = CardFactoryUtil.getMostProminentColorsFromList(list, restrictedToColors);
         for (byte c : MagicColor.WUBRG) {
             if ((colors & c) != 0) {
                 return MagicColor.toLongString(c);
             }
         }
-        return restrictedToColors.get(0); // no difference, there was no prominent color
+        return Iterables.get(restrictedToColors, 0); // no difference, there was no prominent color
     }
 
     public static List<String> getColorByProminence(final List<Card> list) {
@@ -1211,8 +1214,7 @@ public class ComputerUtilCard {
                 // if this thing is both owned and controlled by an opponent and it has a continuous ability,
                 // assume it either benefits the player or disrupts the opponent
                 for (final StaticAbility stAb : c.getStaticAbilities()) {
-                    final Map<String, String> params = stAb.getMapParams();
-                    if (params.get("Mode").equals("Continuous") && stAb.isIntrinsic()) {
+                    if (stAb.checkMode(StaticAbilityMode.Continuous) && stAb.isIntrinsic()) {
                         priority = true;
                         break;
                     }
@@ -1243,17 +1245,16 @@ public class ComputerUtilCard {
             }
         } else {
             for (final StaticAbility stAb : c.getStaticAbilities()) {
-                final Map<String, String> params = stAb.getMapParams();
                 //continuous buffs
-                if (params.get("Mode").equals("Continuous") && "Creature.YouCtrl".equals(params.get("Affected"))) {
+                if (stAb.checkMode(StaticAbilityMode.Continuous) && "Creature.YouCtrl".equals(stAb.getParam("Affected"))) {
                     int bonusPT = 0;
-                    if (params.containsKey("AddPower")) {
-                        bonusPT += AbilityUtils.calculateAmount(c, params.get("AddPower"), stAb);
+                    if (stAb.hasParam("AddPower")) {
+                        bonusPT += AbilityUtils.calculateAmount(c, stAb.getParam("AddPower"), stAb);
                     }
-                    if (params.containsKey("AddToughness")) {
-                        bonusPT += AbilityUtils.calculateAmount(c, params.get("AddPower"), stAb);
+                    if (stAb.hasParam("AddToughness")) {
+                        bonusPT += AbilityUtils.calculateAmount(c, stAb.getParam("AddPower"), stAb);
                     }
-                    String kws = params.get("AddKeyword");
+                    String kws = stAb.getParam("AddKeyword");
                     if (kws != null) {
                         bonusPT += 4 * (1 + StringUtils.countMatches(kws, "&")); //treat each added keyword as a +2/+2 for now
                     }
@@ -1784,7 +1785,7 @@ public class ComputerUtilCard {
             // remove old boost that might be copied
             for (final StaticAbility stAb : c.getStaticAbilities()) {
                 vCard.removePTBoost(c.getLayerTimestamp(), stAb.getId());
-                if (!stAb.checkMode("Continuous")) {
+                if (!stAb.checkMode(StaticAbilityMode.Continuous)) {
                     continue;
                 }
                 if (!stAb.hasParam("Affected")) {
@@ -1818,18 +1819,18 @@ public class ComputerUtilCard {
      * @param sa Pump* or CounterPut*
      * @return
      */
-    public static boolean canPumpAgainstRemoval(Player ai, SpellAbility sa) {
+    public static AiAbilityDecision canPumpAgainstRemoval(Player ai, SpellAbility sa) {
         final List<GameObject> objects = ComputerUtil.predictThreatenedObjects(sa.getActivatingPlayer(), sa, true);
 
         if (!sa.usesTargeting()) {
             final List<Card> cards = AbilityUtils.getDefinedCards(sa.getHostCard(), sa.getParam("Defined"), sa);
             for (final Card card : cards) {
                 if (objects.contains(card)) {
-                    return true;
+                    return new AiAbilityDecision(100, AiPlayDecision.ResponseToStackResolve);
                 }
             }
             // For pumps without targeting restrictions, just return immediately until this is fleshed out.
-            return false;
+            return new AiAbilityDecision(0, AiPlayDecision.TargetingFailed);
         }
 
         CardCollection threatenedTargets = CardLists.getTargetableCards(ai.getCardsIn(ZoneType.Battlefield), sa);
@@ -1848,11 +1849,11 @@ public class ComputerUtilCard {
             }
             if (!sa.isTargetNumberValid()) {
                 sa.resetTargets();
-                return false;
+                return new AiAbilityDecision(0, AiPlayDecision.TargetingFailed);
             }
-            return true;
+            return new AiAbilityDecision(100, AiPlayDecision.ResponseToStackResolve);
         }
-        return false;
+        return new AiAbilityDecision(0, AiPlayDecision.CantPlayAi);
     }
 
     public static boolean isUselessCreature(Player ai, Card c) {
@@ -1862,7 +1863,7 @@ public class ComputerUtilCard {
         if (!c.isCreature()) {
             return false;
         }
-        if (c.hasKeyword("CARDNAME can't attack or block.") || (c.hasKeyword("CARDNAME doesn't untap during your untap step.") && c.isTapped()) || (c.getOwner() == ai && ai.getOpponents().contains(c.getController()))) {
+        if (c.hasKeyword("CARDNAME can't attack or block.") || (c.isTapped() && !c.canUntap(ai, true)) || (c.getOwner() == ai && ai.getOpponents().contains(c.getController()))) {
             return true;
         }
         return false;
@@ -2079,6 +2080,7 @@ public class ComputerUtilCard {
         return false;
     }
 
+    // use this function to skip expensive calculations on identical cards
     public static CardCollection dedupeCards(CardCollection cc) {
         if (cc.size() <= 1) {
             return cc;

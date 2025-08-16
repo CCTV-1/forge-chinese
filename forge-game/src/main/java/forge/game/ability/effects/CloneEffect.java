@@ -21,7 +21,6 @@ import java.util.Arrays;
 import java.util.List;
 
 public class CloneEffect extends SpellAbilityEffect {
-    // TODO update this method
 
     @Override
     protected String getStackDescription(SpellAbility sa) {
@@ -130,6 +129,8 @@ public class CloneEffect extends SpellAbilityEffect {
             cloneTargets.remove(cardToCopy);
         }
 
+        final long ts = game.getNextTimestamp();
+
         for (Card tgtCard : cloneTargets) {
             if (sa.hasParam("CloneZone") &&
                     !tgtCard.isInZone(ZoneType.smartValueOf(sa.getParam("CloneZone")))) {
@@ -142,7 +143,6 @@ public class CloneEffect extends SpellAbilityEffect {
 
             game.getTriggerHandler().clearActiveTriggers(tgtCard, null);
 
-            final long ts = game.getNextTimestamp();
             tgtCard.addCloneState(CardFactory.getCloneStates(cardToCopy, tgtCard, sa), ts);
             tgtCard.updateRooms();
 
@@ -200,7 +200,7 @@ public class CloneEffect extends SpellAbilityEffect {
                 tgtCard.addRemembered(cardToCopy);
             }
             // spire
-            tgtCard.setChosenColorID(cardToCopy.getChosenColorID());
+            tgtCard.setMarkedColors(cardToCopy.getMarkedColors());
 
             game.fireEvent(new GameEventCardStatsChanged(tgtCard));
         }

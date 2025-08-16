@@ -139,7 +139,7 @@ public class MatchController extends AbstractGuiGame {
             //ensure cards appear in the correct row of the field
             pnl.getField().update(true);
             //ensure flashback zone has updated info ie Snapcaster Mage, etc..
-            pnl.getZoneTab(ZoneType.Flashback).update();
+            pnl.updateZone(ZoneType.Flashback);
         }
     }
 
@@ -407,11 +407,8 @@ public class MatchController extends AbstractGuiGame {
                         if (backupLastZones)
                             lastZonesToRestore.put(player, playerPanel.getSelectedTab());
                         playersWithTargetables.put(player, playerPanel.getSelectedTab()); //backup selected tab before changing it
-                        final InfoTab zoneTab = playerPanel.getZoneTab(zoneType);
                         updates.add(new PlayerZoneUpdate(player, zoneType));
-                        if (zoneTab != null) {
-                            playerPanel.setSelectedTab(zoneTab);
-                        }
+                        playerPanel.setSelectedZone(zoneType);
                     }
             }
         }
@@ -663,7 +660,7 @@ public class MatchController extends AbstractGuiGame {
     }
 
     @Override
-    public <T> List<T> getChoices(final String message, final int min, final int max, final List<T> choices, final T selected, final Function<T, String> display) {
+    public <T> List<T> getChoices(final String message, final int min, final int max, final List<T> choices, final List<T> selected, final Function<T, String> display) {
         return GuiBase.getInterface().getChoices(message, min, max, choices, selected, display);
     }
 
@@ -694,8 +691,7 @@ public class MatchController extends AbstractGuiGame {
 
         final Collection<CardView> revealList = delayedReveal.getCards();
         final String revealListCaption = StringUtils.capitalize(MessageUtil.formatMessage("{player's} " + delayedReveal.getZone().getTranslatedName(), delayedReveal.getOwner(), delayedReveal.getOwner()));
-        final InfoTab revealListTab = MatchController.getView().getPlayerPanels().values().iterator().next().getZoneTab(delayedReveal.getZone());
-        final FImage revealListImage = revealListTab != null ? revealListTab.getIcon() : null;
+        final FImage revealListImage = VPlayerPanel.iconFromZone(delayedReveal.getZone());
 
         //use special dialog for choosing card and offering ability to see all revealed cards at the same time
         return new WaitCallback<GameEntityView>() {
@@ -761,6 +757,7 @@ public class MatchController extends AbstractGuiGame {
                 addItem(getFullControlMenuEntry("lblNoPaymentFromManaAbility", FullControlFlag.NoPaymentFromManaAbility, controlFlags));
                 addItem(getFullControlMenuEntry("lblNoFreeCombatCostHandling", FullControlFlag.NoFreeCombatCostHandling, controlFlags));
                 addItem(getFullControlMenuEntry("lblAllowPaymentStartWithMissingResources", FullControlFlag.AllowPaymentStartWithMissingResources, controlFlags));
+                addItem(getFullControlMenuEntry("lblLayerTimestampOrder", FullControlFlag.LayerTimestampOrder, controlFlags));
             }
         };
 

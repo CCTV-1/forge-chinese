@@ -190,7 +190,8 @@ public class EventScene extends MenuScene implements IAfterMatch {
         editDeck.addListener(new ClickListener() {
             @Override
             public void clicked(InputEvent event, float x, float y) {
-                if (currentEvent.format == AdventureEventController.EventFormat.Draft && currentEvent.eventStatus == Ready) {
+                if (currentEvent.format == AdventureEventController.EventFormat.Draft
+                        && (currentEvent.eventStatus == Ready || currentEvent.eventStatus == Started)) {
                     DraftScene.instance().loadEvent(currentEvent);
                     Forge.switchScene(DraftScene.instance());
                 } else if (currentEvent.format == AdventureEventController.EventFormat.Jumpstart && currentEvent.eventStatus == Ready) {
@@ -369,8 +370,8 @@ public class EventScene extends MenuScene implements IAfterMatch {
             case Started:
                 advance.setText("Play round " + currentEvent.currentRound);
                 advance.setVisible(true);
-                editDeck.setDisabled(true);
-                editDeck.setVisible(false);
+                editDeck.setDisabled(false);
+                editDeck.setVisible(true);
                 nextPage.setDisabled(false);
                 previousPage.setDisabled(false);
                 break;
@@ -511,13 +512,11 @@ public class EventScene extends MenuScene implements IAfterMatch {
 
             if (match.p1 instanceof AdventureEventData.AdventureEventHuman) {
                 humanMatch = match;
-                continue;
             } else if (match.p2 instanceof AdventureEventData.AdventureEventHuman) {
                 AdventureEventData.AdventureEventParticipant placeholder = match.p1;
                 match.p1 = match.p2;
                 match.p2 = placeholder;
                 humanMatch = match;
-                continue;
             } else {
                 //Todo: Actually run match simulation here
                 if (MyRandom.percentTrue(50)) {
@@ -530,7 +529,6 @@ public class EventScene extends MenuScene implements IAfterMatch {
                     match.winner = match.p2;
                 }
             }
-
         }
 
         if (humanMatch != null && humanMatch.round != currentEvent.currentRound)
@@ -539,14 +537,16 @@ public class EventScene extends MenuScene implements IAfterMatch {
             DuelScene duelScene = DuelScene.instance();
             EnemySprite enemy = humanMatch.p2.getSprite();
             currentEvent.nextOpponent = humanMatch.p2;
+            advance.setDisabled(true);
             FThreads.invokeInEdtNowOrLater(() -> Forge.setTransitionScreen(new TransitionScreen(() -> {
                 duelScene.initDuels(WorldStage.getInstance().getPlayerSprite(), enemy, false, currentEvent);
+                advance.setDisabled(false);
                 Forge.switchScene(duelScene);
             }, Forge.takeScreenshot(), true, false, false, false, "", Current.player().avatar(), enemy.getAtlasPath(), Current.player().getName(), enemy.getName(), humanMatch.p1.getRecord(), humanMatch.p2.getRecord())));
         } else {
             finishRound();
+            advance.setDisabled(false);
         }
-        advance.setDisabled(false);
     }
 
     AdventureEventData.AdventureEventMatch humanMatch = null;
@@ -576,6 +576,9 @@ public class EventScene extends MenuScene implements IAfterMatch {
     }
 
     public void finishRound() {
+        // TODO: Handle the scenario where a 3-match duel includes a draw. 
+        // Currently, the system does not account for draws, which may lead to incorrect behavior.
+        // Consider adding logic to track and resolve draw matches, ensuring the overall match outcome is determined correctly.
         if (currentEvent.currentRound == currentEvent.rounds) {
             finishEvent();
         } else currentEvent.currentRound += 1;

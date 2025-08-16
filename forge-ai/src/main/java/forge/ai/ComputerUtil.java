@@ -48,6 +48,7 @@ import forge.game.spellability.SpellAbility;
 import forge.game.spellability.SpellAbilityStackInstance;
 import forge.game.spellability.TargetRestrictions;
 import forge.game.staticability.StaticAbility;
+import forge.game.staticability.StaticAbilityMode;
 import forge.game.trigger.Trigger;
 import forge.game.trigger.TriggerType;
 import forge.game.trigger.WrappedAbility;
@@ -156,7 +157,6 @@ public class ComputerUtil {
     }
 
     public static int counterSpellRestriction(final Player ai, final SpellAbility sa) {
-        // Move this to AF?
         // Restriction Level is Based off a handful of factors
 
         int restrict = 0;
@@ -214,7 +214,6 @@ public class ComputerUtil {
         return restrict;
     }
 
-    // this is used for AI's counterspells
     public static final boolean playStack(SpellAbility sa, final Player ai, final Game game) {
         sa.setActivatingPlayer(ai);
         if (!ComputerUtilCost.canPayCost(sa, ai, false))
@@ -247,47 +246,6 @@ public class ComputerUtil {
             return true;
         }
         return false;
-    }
-
-    public static final boolean playSpellAbilityWithoutPayingManaCost(final Player ai, final SpellAbility sa, final Game game) {
-        SpellAbility newSA = sa.copyWithNoManaCost();
-        newSA.setActivatingPlayer(ai);
-
-        if (!CostPayment.canPayAdditionalCosts(newSA.getPayCosts(), newSA, false) || !ComputerUtilMana.canPayManaCost(newSA, ai, 0, false)) {
-            return false;
-        }
-
-        newSA = GameActionUtil.addExtraKeywordCost(newSA);
-
-        final Card source = newSA.getHostCard();
-
-        Zone fromZone = game.getZoneOf(source);
-        int zonePosition = 0;
-        if (fromZone != null) {
-            zonePosition = fromZone.getCards().indexOf(source);
-        }
-
-        if (newSA.isSpell() && !source.isCopiedSpell()) {
-            newSA.setHostCard(game.getAction().moveToStack(source, newSA));
-
-            if (newSA.getApi() == ApiType.Charm && !CharmEffect.makeChoices(newSA)) {
-                // 603.3c If no mode is chosen, the ability is removed from the stack.
-                return false;
-            }
-        }
-
-        final CostPayment pay = new CostPayment(newSA.getPayCosts(), newSA);
-
-        // do this after card got added to stack
-        if (!newSA.checkRestrictions(ai)) {
-            GameActionUtil.rollbackAbility(newSA, fromZone, zonePosition, pay, source);
-            return false;
-        }
-        
-        pay.payComputerCosts(new AiCostDecision(ai, newSA, false));
-
-        game.getStack().add(newSA);
-        return true;
     }
 
     public static final boolean playNoStack(final Player ai, SpellAbility sa, final Game game, final boolean effect) {
@@ -794,7 +752,7 @@ public class ComputerUtil {
                 tapList.clear();
             }
             tapList.add(next);
-            totalPower = CardLists.getTotalPower(tapList, true, sa.isCrew());
+            totalPower = CardLists.getTotalPower(tapList, sa);
             if (totalPower >= amount) {
                 break;
             }
@@ -906,7 +864,7 @@ public class ComputerUtil {
 
                         // Run non-mandatory trigger.
                         // These checks only work if the Executing SpellAbility is an Ability_Sub.
-                        if ((exSA instanceof AbilitySub) && !SpellApiToAi.Converter.get(exSA.getApi()).doTriggerAI(ai, exSA, false)) {
+                        if ((exSA instanceof AbilitySub) && !SpellApiToAi.Converter.get(exSA).doTrigger(ai, exSA, false)) {
                             // AI would not run this trigger if given the chance
                             return sacrificed;
                         }
@@ -1116,6 +1074,80 @@ public class ComputerUtil {
         return prevented;
     }
 
+    /**
+     * Is it OK to cast this for less than the Max Targets?
+     * @param source the source Card
+     * @return true if it's OK to cast this Card for less than the max targets
+     */
+    public static boolean shouldCastLessThanMax(final Player ai, final Card source) {
+        if (source.getXManaCostPaid() > 0) {
+            // If TargetMax is MaxTgts (i.e., an "X" cost), this is fine because AI is limited by payment resources available.
+            return true;
+        }
+        if (aiLifeInDanger(ai, false, 0)) {
+            // Otherwise, if life is possibly in danger, then this is fine.
+            return true;
+        }
+        // do not play now.
+        return false;
+    }
+
+    /**
+     * Is this discard probably worse than a random draw?
+     * @param discard Card to discard
+     * @return boolean
+     */
+    public static boolean isWorseThanDraw(final Player ai, Card discard) {
+        if (discard.hasSVar("DiscardMe")) {
+            return true;
+        }
+
+        final Game game = ai.getGame();
+        final CardCollection landsInPlay = CardLists.filter(ai.getCardsIn(ZoneType.Battlefield), CardPredicates.LANDS_PRODUCING_MANA);
+        final CardCollection landsInHand = CardLists.filter(ai.getCardsIn(ZoneType.Hand), CardPredicates.LANDS);
+        final CardCollection nonLandsInHand = CardLists.getNotType(ai.getCardsIn(ZoneType.Hand), "Land");
+        final int highestCMC = Math.max(6, Aggregates.max(nonLandsInHand, Card::getCMC));
+        final int discardCMC = discard.getCMC();
+        if (discard.isLand()) {
+            if (landsInPlay.size() >= highestCMC
+                    || (landsInPlay.size() + landsInHand.size() > 6 && landsInHand.size() > 1)
+                    || (landsInPlay.size() > 3 && nonLandsInHand.size() == 0)) {
+                // Don't need more land.
+                return true;
+            }
+        } else { //non-land
+            if (discardCMC > landsInPlay.size() + landsInHand.size() + 2) {
+                // not castable for some time.
+                return true;
+            } else if (!game.getPhaseHandler().isPlayerTurn(ai)
+                    && game.getPhaseHandler().getPhase().isAfter(PhaseType.MAIN2)
+                    && discardCMC > landsInPlay.size() + landsInHand.size()
+                    && discardCMC > landsInPlay.size() + 1
+                    && nonLandsInHand.size() > 1) {
+                // not castable for at least one other turn.
+                return true;
+            } else if (landsInPlay.size() > 5 && discard.getCMC() <= 1
+                    && !discard.hasProperty("hasXCost", ai, null, null)) {
+                // Probably don't need small stuff now.
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // returns true if it's better to wait until blockers are declared
+    public static boolean waitForBlocking(final SpellAbility sa) {
+        final Game game = sa.getActivatingPlayer().getGame();
+        final PhaseHandler ph = game.getPhaseHandler();
+
+        return sa.getHostCard().isCreature()
+                && sa.getPayCosts().hasTapCost()
+                && (ph.getPhase().isBefore(PhaseType.COMBAT_DECLARE_BLOCKERS)
+                        && !ph.getNextTurn().equals(sa.getActivatingPlayer()))
+                && !sa.getHostCard().hasSVar("EndOfTurnLeavePlay")
+                && !sa.hasParam("ActivationPhases");
+    }
+
     public static boolean castPermanentInMain1(final Player ai, final SpellAbility sa) {
         final Card card = sa.getHostCard();
         final CardState cardState = card.isFaceDown() ? card.getState(CardStateName.Original) : card.getCurrentState();
@@ -1140,6 +1172,11 @@ public class ComputerUtil {
                     return true;
                 }
             }
+        }
+
+        // if AI has no speed, play start your engines on Main1
+        if (ai.noSpeed() && cardState.hasKeyword(Keyword.START_YOUR_ENGINES)) {
+            return true;
         }
 
         // cast Blitz in main 1 if the creature attacks
@@ -1282,80 +1319,6 @@ public class ComputerUtil {
         return false;
     }
 
-    /**
-     * Is it OK to cast this for less than the Max Targets?
-     * @param source the source Card
-     * @return true if it's OK to cast this Card for less than the max targets
-     */
-    public static boolean shouldCastLessThanMax(final Player ai, final Card source) {
-        if (source.getXManaCostPaid() > 0) {
-            // If TargetMax is MaxTgts (i.e., an "X" cost), this is fine because AI is limited by payment resources available.
-            return true;
-        }
-        if (aiLifeInDanger(ai, false, 0)) {
-            // Otherwise, if life is possibly in danger, then this is fine.
-            return true;
-        }
-        // do not play now.
-        return false;
-    }
-
-    /**
-     * Is this discard probably worse than a random draw?
-     * @param discard Card to discard
-     * @return boolean
-     */
-    public static boolean isWorseThanDraw(final Player ai, Card discard) {
-        if (discard.hasSVar("DiscardMe")) {
-            return true;
-        }
-
-        final Game game = ai.getGame();
-        final CardCollection landsInPlay = CardLists.filter(ai.getCardsIn(ZoneType.Battlefield), CardPredicates.LANDS_PRODUCING_MANA);
-        final CardCollection landsInHand = CardLists.filter(ai.getCardsIn(ZoneType.Hand), CardPredicates.LANDS);
-        final CardCollection nonLandsInHand = CardLists.getNotType(ai.getCardsIn(ZoneType.Hand), "Land");
-        final int highestCMC = Math.max(6, Aggregates.max(nonLandsInHand, Card::getCMC));
-        final int discardCMC = discard.getCMC();
-        if (discard.isLand()) {
-            if (landsInPlay.size() >= highestCMC
-                    || (landsInPlay.size() + landsInHand.size() > 6 && landsInHand.size() > 1)
-                    || (landsInPlay.size() > 3 && nonLandsInHand.size() == 0)) {
-                // Don't need more land.
-                return true;
-            }
-        } else { //non-land
-            if (discardCMC > landsInPlay.size() + landsInHand.size() + 2) {
-                // not castable for some time.
-                return true;
-            } else if (!game.getPhaseHandler().isPlayerTurn(ai)
-                    && game.getPhaseHandler().getPhase().isAfter(PhaseType.MAIN2)
-                    && discardCMC > landsInPlay.size() + landsInHand.size()
-                    && discardCMC > landsInPlay.size() + 1
-                    && nonLandsInHand.size() > 1) {
-                // not castable for at least one other turn.
-                return true;
-            } else if (landsInPlay.size() > 5 && discard.getCMC() <= 1
-                    && !discard.hasProperty("hasXCost", ai, null, null)) {
-                // Probably don't need small stuff now.
-                return true;
-            }
-        }
-        return false;
-    }
-
-    // returns true if it's better to wait until blockers are declared
-    public static boolean waitForBlocking(final SpellAbility sa) {
-        final Game game = sa.getActivatingPlayer().getGame();
-        final PhaseHandler ph = game.getPhaseHandler();
-
-        return sa.getHostCard().isCreature()
-                && sa.getPayCosts().hasTapCost()
-                && (ph.getPhase().isBefore(PhaseType.COMBAT_DECLARE_BLOCKERS)
-                        && !ph.getNextTurn().equals(sa.getActivatingPlayer()))
-                && !sa.getHostCard().hasSVar("EndOfTurnLeavePlay")
-                && !sa.hasParam("ActivationPhases");
-    }
-
     public static boolean castSpellInMain1(final Player ai, final SpellAbility sa) {
         final Card source = sa.getHostCard();
         final SpellAbility sub = sa.getSubAbility();
@@ -1364,7 +1327,6 @@ public class ComputerUtil {
             return true;
         }
 
-        // Cipher spells
         if (sub != null) {
             final ApiType api = sub.getApi();
             if (ApiType.Encode == api && !ai.getCreaturesInPlay().isEmpty()) {
@@ -1422,13 +1384,14 @@ public class ComputerUtil {
 
     // returns true if the AI should stop using the ability
     public static boolean preventRunAwayActivations(final SpellAbility sa) {
-        int activations = sa.getActivationsThisTurn();
-
-        if (!sa.isIntrinsic()) {
-            return MyRandom.getRandom().nextFloat() >= .95; // Abilities created by static abilities have no memory
+        if (!sa.isActivatedAbility()) {
+            return false;
         }
 
-        if (activations < 10) { //10 activations per turn should still be acceptable
+        int activations = sa.getActivationsThisTurn();
+
+        //10 activations should still be acceptable
+        if (activations < 10) {
             return false;
         }
 
@@ -1451,9 +1414,7 @@ public class ComputerUtil {
             }
         }
         for (final CostPart part : abCost.getCostParts()) {
-            if (part instanceof CostSacrifice) {
-                final CostSacrifice sac = (CostSacrifice) part;
-
+            if (part instanceof CostSacrifice sac) {
                 final String type = sac.getType();
 
                 if (type.equals("CARDNAME")) {
@@ -1498,15 +1459,14 @@ public class ComputerUtil {
         // check for Continuous abilities that grant Haste
         for (final Card c : all) {
             for (StaticAbility stAb : c.getStaticAbilities()) {
-                Map<String, String> params = stAb.getMapParams();
-                if ("Continuous".equals(params.get("Mode")) && params.containsKey("AddKeyword")
-                        && params.get("AddKeyword").contains("Haste")) {
+                if (stAb.checkMode(StaticAbilityMode.Continuous) && stAb.hasParam("AddKeyword")
+                        && stAb.getParam("AddKeyword").contains("Haste")) {
 
                     if (c.isEquipment() && c.getEquipping() == null) {
                         return true;
                     }
 
-                    final String affected = params.get("Affected");
+                    final String affected = stAb.getParam("Affected");
                     if (affected.contains("Creature.YouCtrl")
                             || affected.contains("Other+YouCtrl")) {
                         return true;
@@ -1559,11 +1519,10 @@ public class ComputerUtil {
 
             for (final Card c : opp) {
                 for (StaticAbility stAb : c.getStaticAbilities()) {
-                    Map<String, String> params = stAb.getMapParams();
-                    if ("Continuous".equals(params.get("Mode")) && params.containsKey("AddKeyword")
-                            && params.get("AddKeyword").contains("Haste")) {
+                    if (stAb.checkMode(StaticAbilityMode.Continuous) && stAb.hasParam("AddKeyword")
+                            && stAb.getParam("AddKeyword").contains("Haste")) {
 
-                        final ArrayList<String> affected = Lists.newArrayList(params.get("Affected").split(","));
+                        final ArrayList<String> affected = Lists.newArrayList(stAb.getParam("Affected").split(","));
                         if (affected.contains("Creature")) {
                             return true;
                         }
@@ -1662,7 +1621,6 @@ public class ComputerUtil {
                 damage = dmg;
             }
 
-            // Triggered abilities
             if (c.isCreature() && c.isInPlay() && CombatUtil.canAttack(c)) {
                 for (final Trigger t : c.getTriggers()) {
                     if (TriggerType.Attacks.equals(t.getMode())) {
@@ -1819,9 +1777,7 @@ public class ComputerUtil {
                 noRegen = true;
             }
             for (final Object o : objects) {
-                if (o instanceof Card) {
-                    final Card c = (Card) o;
-
+                if (o instanceof Card c) {
                     // indestructible
                     if (c.hasKeyword(Keyword.INDESTRUCTIBLE)) {
                         continue;
@@ -1885,9 +1841,7 @@ public class ComputerUtil {
                     if (ComputerUtilCombat.predictDamageTo(c, dmg, source, false) >= ComputerUtilCombat.getDamageToKill(c, false)) {
                         threatened.add(c);
                     }
-                } else if (o instanceof Player) {
-                    final Player p = (Player) o;
-
+                } else if (o instanceof Player p) {
                     if (source.hasKeyword(Keyword.INFECT)) {
                         if (p.canReceiveCounters(CounterEnumType.POISON) && ComputerUtilCombat.predictDamageTo(p, dmg, source, false) >= 10 - p.getPoisonCounters()) {
                             threatened.add(p);
@@ -1905,8 +1859,7 @@ public class ComputerUtil {
                 || saviourApi == null)) {
             final int dmg = -AbilityUtils.calculateAmount(source, topStack.getParam("NumDef"), topStack);
             for (final Object o : objects) {
-                if (o instanceof Card) {
-                    final Card c = (Card) o;
+                if (o instanceof Card c) {
                     final boolean canRemove = (c.getNetToughness() <= dmg)
                             || (!c.hasKeyword(Keyword.INDESTRUCTIBLE) && c.getShieldCount() == 0 && dmg >= ComputerUtilCombat.getDamageToKill(c, false));
                     if (!canRemove) {
@@ -1952,9 +1905,7 @@ public class ComputerUtil {
                         || saviourApi == ApiType.Protection || saviourApi == null
                         || saviorWithSubsApi == ApiType.Pump || saviorWithSubsApi == ApiType.PumpAll)) {
             for (final Object o : objects) {
-                if (o instanceof Card) {
-                    final Card c = (Card) o;
-                    // indestructible
+                if (o instanceof Card c) {
                     if (c.hasKeyword(Keyword.INDESTRUCTIBLE)) {
                         continue;
                     }
@@ -2003,8 +1954,7 @@ public class ComputerUtil {
                 && topStack.hasParam("Destination")
                 && topStack.getParam("Destination").equals("Exile")) {
             for (final Object o : objects) {
-                if (o instanceof Card) {
-                    final Card c = (Card) o;
+                if (o instanceof Card c) {
                     // give Shroud to targeted creatures
                     if ((saviourApi == ApiType.Pump || saviourApi == ApiType.PumpAll) && (!topStack.usesTargeting() || !grantShroud)) {
                         continue;
@@ -2031,8 +1981,7 @@ public class ComputerUtil {
                 && (saviourApi == ApiType.ChangeZone || saviourApi == ApiType.Pump || saviourApi == ApiType.PumpAll
                 || saviourApi == ApiType.Protection || saviourApi == null)) {
             for (final Object o : objects) {
-                if (o instanceof Card) {
-                    final Card c = (Card) o;
+                if (o instanceof Card c) {
                     // give Shroud to targeted creatures
                     if ((saviourApi == ApiType.Pump || saviourApi == ApiType.PumpAll) && (!topStack.usesTargeting() || !grantShroud)) {
                         continue;
@@ -2054,8 +2003,7 @@ public class ComputerUtil {
             boolean enableCurseAuraRemoval = aic != null ? aic.getBooleanProperty(AiProps.ACTIVELY_DESTROY_IMMEDIATELY_UNBLOCKABLE) : false;
             if (enableCurseAuraRemoval) {
                 for (final Object o : objects) {
-                    if (o instanceof Card) {
-                        final Card c = (Card) o;
+                    if (o instanceof Card c) {
                         // give Shroud to targeted creatures
                         if ((saviourApi == ApiType.Pump || saviourApi == ApiType.PumpAll) && (!topStack.usesTargeting() || !grantShroud)) {
                             continue;
@@ -2479,7 +2427,7 @@ public class ComputerUtil {
                 // Are we picking a type to reduce costs for that type?
                 boolean reducingCost = false;
                 for (StaticAbility s : sa.getHostCard().getStaticAbilities()) {
-                    if ("ReduceCost".equals(s.getParam("Mode")) && "Card.ChosenType".equals(s.getParam("ValidCard"))) {
+                    if (s.checkMode(StaticAbilityMode.ReduceCost) && "Card.ChosenType".equals(s.getParam("ValidCard"))) {
                         reducingCost = true;
                         break;
                     }
@@ -2603,7 +2551,7 @@ public class ComputerUtil {
         String logic = sa.getParam("AILogic");
         switch (logic) {
         case "Torture":
-            return "Torture";
+            return options.get(1);
         case "GraceOrCondemnation":
             List<ZoneType> graceZones = new ArrayList<ZoneType>();
             graceZones.add(ZoneType.Battlefield);
@@ -2611,12 +2559,12 @@ public class ComputerUtil {
             CardCollection graceCreatures = CardLists.getType(game.getCardsIn(graceZones), "Creature");
             int humanGrace = CardLists.filterControlledBy(graceCreatures, ai.getOpponents()).size();
             int aiGrace = CardLists.filterControlledBy(graceCreatures, ai).size();
-            return aiGrace > humanGrace ? "Grace" : "Condemnation";
+            return options.get(aiGrace > humanGrace ? 0 : 1);
         case "CarnageOrHomage":
             CardCollection cardsInPlay = CardLists.getNotType(game.getCardsIn(ZoneType.Battlefield), "Land");
             CardCollection humanlist = CardLists.filterControlledBy(cardsInPlay, ai.getOpponents());
             CardCollection computerlist = ai.getCreaturesInPlay();
-            return ComputerUtilCard.evaluatePermanentList(computerlist) + 3 < ComputerUtilCard.evaluatePermanentList(humanlist) ? "Carnage" : "Homage";
+            return options.get(ComputerUtilCard.evaluatePermanentList(computerlist) + 3 < ComputerUtilCard.evaluatePermanentList(humanlist) ? 0 : 1);
         case "Judgment":
             if (votes.isEmpty()) {
                 CardCollection list = new CardCollection();
@@ -2630,68 +2578,71 @@ public class ComputerUtil {
             return Iterables.getFirst(votes.keySet(), null);
         case "Protection":
             if (votes.isEmpty()) {
-                List<String> restrictedToColors = Lists.newArrayList();
+                Map<String, SpellAbility> restrictedToColors = Maps.newHashMap();
                 for (Object o : options) {
-                    if (o instanceof String) {
-                        restrictedToColors.add((String) o);
-                        }
+                    if (o instanceof SpellAbility sp) { // TODO check for Color Word Changes
+                        restrictedToColors.put(sp.getOriginalDescription(), sp);
                     }
+                }
                 CardCollection lists = CardLists.filterControlledBy(game.getCardsInGame(), ai.getOpponents());
-                return StringUtils.capitalize(ComputerUtilCard.getMostProminentColor(lists, restrictedToColors));
+                return restrictedToColors.get(StringUtils.capitalize(ComputerUtilCard.getMostProminentColor(lists, restrictedToColors.keySet())));
             }
             return Iterables.getFirst(votes.keySet(), null);
         case "FeatherOrQuill":
+            SpellAbility feather = (SpellAbility)options.get(0);
+            SpellAbility quill = (SpellAbility)options.get(1);
             // try to mill opponent with Quill vote
             if (opponent && !controller.cantLoseCheck(GameLossReason.Milled)) {
-                int numQuill = votes.get("Quill").size();
+                int numQuill = votes.get(quill).size();
                 if (numQuill + 1 >= controller.getCardsIn(ZoneType.Library).size()) {
-                    return controller.isCardInPlay("Laboratory Maniac") ? "Feather" : "Quill";
+                    return controller.isCardInPlay("Laboratory Maniac") ? feather : quill;
                 }
             }
             // is it can't receive counters, choose +1/+1 ones
             if (!source.canReceiveCounters(p1p1Type)) {
-                return opponent ? "Feather" : "Quill";
+                return opponent ? feather : quill;
             }
             // if source is not on the battlefield anymore, choose +1/+1 ones
             if (!game.getCardState(source).isInPlay()) {
-                return opponent ? "Feather" : "Quill";
+                return opponent ? feather : quill;
             }
             // if no hand cards, try to mill opponent
             if (controller.getCardsIn(ZoneType.Hand).isEmpty()) {
-                return opponent ? "Quill" : "Feather";
+                return opponent ? quill : feather;
             }
 
             // AI has something to discard
             if (ai.equals(controller)) {
                 CardCollectionView aiCardsInHand = ai.getCardsIn(ZoneType.Hand);
                 if (CardLists.count(aiCardsInHand, CardPredicates.hasSVar("DiscardMe")) >= 1) {
-                    return "Quill";
+                    return quill;
                 }
             }
 
             // default card draw and discard are better than +1/+1 counter
-            return opponent ? "Feather" : "Quill";
+            return opponent ? feather : quill;
         case "StrengthOrNumbers":
+            SpellAbility strength = (SpellAbility)options.get(0);
+            SpellAbility numbers = (SpellAbility)options.get(1);
             // similar to fabricate choose +1/+1 or Token
-            final SpellAbility saToken = sa.findSubAbilityByType(ApiType.Token);
-            int numStrength = votes.get("Strength").size();
-            int numNumbers = votes.get("Numbers").size();
+            int numStrength = votes.get(strength).size();
+            int numNumbers = votes.get(numbers).size();
 
-            Card token = TokenAi.spawnToken(controller, saToken);
+            Card token = TokenAi.spawnToken(controller, numbers);
 
             // is it can't receive counters, choose +1/+1 ones
             if (!source.canReceiveCounters(p1p1Type)) {
-                return opponent ? "Strength" : "Numbers";
+                return opponent ? strength : numbers;
             }
 
             // if source is not on the battlefield anymore
             if (!game.getCardState(source).isInPlay()) {
-                return opponent ? "Strength" : "Numbers";
+                return opponent ? strength : numbers;
             }
 
             // token would not survive
             if (token == null || !token.isCreature()  || token.getNetToughness() < 1) {
-                return opponent ? "Numbers" : "Strength";
+                return opponent ? numbers : strength;
             }
 
             // TODO check for ETB to +1/+1 counters or over another trigger like lifegain
@@ -2712,35 +2663,40 @@ public class ComputerUtil {
             int scoreStrength = ComputerUtilCard.evaluateCreature(sourceStrength) + tokenScore * numNumbers;
             int scoreNumbers = ComputerUtilCard.evaluateCreature(sourceNumbers) + tokenScore * (numNumbers + 1);
 
-            return (scoreNumbers >= scoreStrength) != opponent ? "Numbers" : "Strength";
+            return (scoreNumbers >= scoreStrength) != opponent ? numbers : strength;
         case "SproutOrHarvest":
+            SpellAbility sprout = (SpellAbility)options.get(0);
+            SpellAbility harvest = (SpellAbility)options.get(1);
             // lifegain would hurt or has no effect
             if (opponent) {
                 if (lifegainNegative(controller, source)) {
-                    return "Harvest";
+                    return harvest;
                 }
             } else {
                 if (lifegainNegative(controller, source)) {
-                    return "Sprout";
+                    return sprout;
                 }
             }
 
             // is it can't receive counters, choose +1/+1 ones
             if (!source.canReceiveCounters(p1p1Type)) {
-                return opponent ? "Sprout" : "Harvest";
+                return opponent ? sprout : harvest;
             }
 
             // if source is not on the battlefield anymore
             if (!game.getCardState(source).isInPlay()) {
-                return opponent ? "Sprout" : "Harvest";
+                return opponent ? sprout : harvest;
             }
             // TODO add Lifegain to +1/+1 counters trigger
 
             // for now +1/+1 counters are better
-            return opponent ? "Harvest" : "Sprout";
+            return opponent ? harvest : sprout;
         case "DeathOrTaxes":
-            int numDeath = votes.get("Death").size();
-            int numTaxes = votes.get("Taxes").size();
+            SpellAbility death = (SpellAbility)options.get(0);
+            SpellAbility taxes = (SpellAbility)options.get(1);
+
+            int numDeath = votes.get(death).size();
+            int numTaxes = votes.get(taxes).size();
 
             if (opponent) {
                 CardCollection aiCreatures = ai.getCreaturesInPlay();
@@ -2748,29 +2704,29 @@ public class ComputerUtil {
                 // would need to sacrifice more creatures than AI has
                 // sacrifice even more
                 if (aiCreatures.size() <= numDeath) {
-                    return "Death";
+                    return death;
                 }
                 // would need to discard more cards than it has
                 if (aiCardsInHand.size() <= numTaxes) {
-                    return "Taxes";
+                    return taxes;
                 }
 
                 // has cards with SacMe or Token
                 if (CardLists.count(aiCreatures, CardPredicates.hasSVar("SacMe").or(CardPredicates.TOKEN)) >= numDeath) {
-                    return "Death";
+                    return death;
                 }
 
                 // has cards with DiscardMe
                 if (CardLists.count(aiCardsInHand, CardPredicates.hasSVar("DiscardMe")) >= numTaxes) {
-                    return "Taxes";
+                    return taxes;
                 }
 
                 // discard is probably less worse than sacrifice
-                return "Taxes";
+                return taxes;
             } else {
                 // ai is first voter or ally of controller
                 // both are not affected, but if opponents control creatures, sacrifice is worse
-                return controller.getOpponents().getCreaturesInPlay().isEmpty() ? "Taxes" : "Death";
+                return controller.getOpponents().getCreaturesInPlay().isEmpty() ? taxes : death;
             }
         default:
             return Iterables.getFirst(options, null);
@@ -2839,16 +2795,12 @@ public class ComputerUtil {
             if (!trigger.requirementsCheck(game)) {
                 continue;
             }
-            if (trigger.hasParam("ValidCard")) {
-                if (!card.isValid(trigger.getParam("ValidCard").split(","), source.getController(), source, sa)) {
-                    continue;
-                }
-            }
 
-            if (trigger.hasParam("ValidActivatingPlayer")) {
-                if (!player.isValid(trigger.getParam("ValidActivatingPlayer"), source.getController(), source, sa)) {
-                    continue;
-                }
+            if (!trigger.matchesValidParam("ValidCard", card)) {
+                continue;
+            }
+            if (!trigger.matchesValidParam("ValidActivatingPlayer", player)) {
+                continue;
             }
 
             // fall back for OverridingAbility
@@ -2906,10 +2858,8 @@ public class ComputerUtil {
                     && AbilityUtils.getDefinedCards(permanent, source.getSVar(trigger.getParam("CheckOnTriggeredCard").split(" ")[0]), null).isEmpty()) {
                 continue;
             }
-            if (trigger.hasParam("ValidCard")) {
-                if (!permanent.isValid(trigger.getParam("ValidCard"), source.getController(), source, null)) {
-                    continue;
-                }
+            if (!trigger.matchesValidParam("ValidCard", permanent)) {
+                continue;
             }
             // fall back for OverridingAbility
             SpellAbility trigSa = trigger.ensureAbility();
@@ -2947,7 +2897,7 @@ public class ComputerUtil {
                 // Iceberg does use Ice as Storage
                 || (type.is(CounterEnumType.ICE) && !"Iceberg".equals(c.getName()))
                 // some lands does use Depletion as Storage Counter
-                || (type.is(CounterEnumType.DEPLETION) && c.hasKeyword("CARDNAME doesn't untap during your untap step."))
+                || (type.is(CounterEnumType.DEPLETION) && c.getReplacementEffects().anyMatch(r -> r.getMode().equals(ReplacementType.Untap) && r.getLayer().equals(ReplacementLayer.CantHappen)))
                 // treat Time Counters on suspended Cards as Bad,
                 // and also on Chronozoa
                 || (type.is(CounterEnumType.TIME) && (!c.isInPlay() || "Chronozoa".equals(c.getName())))

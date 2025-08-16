@@ -16,6 +16,7 @@ import forge.game.*;
 import forge.game.ability.AbilityKey;
 import forge.game.ability.AbilityUtils;
 import forge.game.ability.ApiType;
+import forge.game.ability.effects.RollDiceEffect;
 import forge.game.card.*;
 import forge.game.card.CardView.CardStateView;
 import forge.game.card.token.TokenInfo;
@@ -453,7 +454,7 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
     private boolean useSelectCardsInput(final FCollectionView<? extends GameEntity> sourceList, final SpellAbility sa) {
         //this can be used to stop zone select GUI when certain APIs would reveal illegal zone information
         //initially created for HeistEffect which showed library placement
-        if (ApiType.Heist.equals(sa.getApi())) return false;
+        if (sa != null && ApiType.Heist.equals(sa.getApi())) return false;
         return useSelectCardsInput(sourceList);
     }
 
@@ -526,6 +527,43 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
                 gameCachechoose.getTrackableKeys(), CardView.get(sa.getHostCard()));
         endTempShowCards();
         gameCachechoose.addToList(views, choices);
+        return choices;
+    }
+
+    /**
+     * IDs of Contraptions that have been cranked previously, and will default to the "cranked" column next time their
+     * sprocket is cranked.
+     */
+    private final Set<Integer> savedCrankedIDs = new HashSet<>();
+
+    @Override
+    public List<Card> chooseContraptionsToCrank(List<Card> contraptions) {
+        if(contraptions.isEmpty())
+            return contraptions;
+
+        tempShowCards(contraptions);
+        GameEntityViewMap<Card, CardView> gameCacheChoose = GameEntityView.getMap(contraptions);
+        TrackableCollection<CardView> viewList = gameCacheChoose.getTrackableKeys();
+
+        //Contraptions that were cranked previously will start in the cranked column when the dialog is shown.
+        List<CardView> cranked = new ArrayList<>(), uncranked = new ArrayList<>();
+        for(CardView c : viewList) {
+            int id = c.getId();
+            (savedCrankedIDs.contains(id) ? cranked : uncranked).add(c);
+        }
+
+        List<CardView> views = getGui().many(localizer.getMessage("lblChooseCrank"),
+                localizer.getMessage("lblCranked"), -1, -1, uncranked, cranked, null);
+        endTempShowCards();
+
+        //If any were on the saved cranked list before but aren't cranked now, remove them from the saved list.
+        cranked.stream().filter(v -> !views.contains(v)).map(CardView::getId).forEach(savedCrankedIDs::remove);
+        //Add any that were cranked this time to the saved list.
+        views.stream().map(CardView::getId).forEach(savedCrankedIDs::add);
+
+        List<Card> choices = new CardCollection();
+        gameCacheChoose.addToList(views, choices);
+
         return choices;
     }
 
@@ -1118,7 +1156,8 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
                 choices = getGui().order(localizer.getMessage("lblChooseOrderCardsPutIntoSchemeDeck"), localizer.getMessage(topOfDeck ? "lblClosestToTop" : "lblClosestToBottom"), choices, null);
                 break;
             case AttractionDeck:
-                choices = getGui().order(localizer.getMessage("lblChooseOrderCardsPutIntoAttractionDeck"), localizer.getMessage(topOfDeck ? "lblClosestToTop" : "lblClosestToBottom"), choices, null);
+            case ContraptionDeck:
+                choices = getGui().order(localizer.getMessage("lblChooseOrderCardsPutIntoExtraDeck"), localizer.getMessage(topOfDeck ? "lblClosestToTop" : "lblClosestToBottom"), choices, null);
             case Stack:
                 choices = getGui().order(localizer.getMessage("lblChooseOrderCopiesCast"), localizer.getMessage("lblPutFirst"), choices, null);
                 break;
@@ -1367,6 +1406,30 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
     }
 
     @Override
+    public int chooseSprocket(Card assignee, boolean forceDifferent) {
+        String cardName = CardTranslation.getTranslatedName(assignee.getName()) + " (" + assignee.getId() + ")";
+        String prompt = Localizer.getInstance().getMessage("lblAssignSprocket", cardName);
+        List<Integer> options = Lists.newArrayList(1, 2, 3);
+        if(forceDifferent)
+            options.remove(Integer.valueOf(assignee.getSprocket()));
+        int crankedNextTurn = (player.getCrankCounter() % 3) + 1;
+        getGui().setCard(assignee.getView());
+        List<Integer> choices = getGui().getChoices(prompt, 1, 1, options, null, (sprocket) -> {
+            //Add some info about each sprocket.
+            StringBuilder label = new StringBuilder();
+            label.append(sprocket);
+            int currentCount = CardLists.count(player.getCardsIn(ZoneType.Battlefield), CardPredicates.isContraptionOnSprocket(sprocket));
+            if(currentCount > 0)
+                label.append(' ').append(Localizer.getInstance().getMessage("lblAssignSprocketCurrentCount", currentCount));
+            if(sprocket == crankedNextTurn)
+                label.append(' ').append(Localizer.getInstance().getMessage("lblAssignSprocketNextTurn"));
+            return label.toString();
+        });
+        assert choices.size() == 1;
+        return choices.get(0);
+    }
+
+    @Override
     public PlanarDice choosePDRollToIgnore(List<PlanarDice> rolls) {
         return getGui().one(Localizer.getInstance().getMessage("lblChooseRollIgnore"), rolls);
     }
@@ -1377,12 +1440,33 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
     }
 
     @Override
+    public List<Integer> chooseDiceToReroll(List<Integer> rolls) {
+        return getGui().many(Localizer.getInstance().getMessage("lblChooseDiceToRerollTitle"),
+                Localizer.getInstance().getMessage("lblChooseDiceToRerollCaption"),0, rolls.size(), rolls, null);
+    }
+
+    @Override
+    public Integer chooseRollToModify(List<Integer> rolls) {
+        return getGui().oneOrNone(Localizer.getInstance().getMessage("lblChooseRollToModify"), rolls);
+    }
+
+    @Override
+    public RollDiceEffect.DieRollResult chooseRollToSwap(List<RollDiceEffect.DieRollResult> rolls) {
+        return getGui().oneOrNone(Localizer.getInstance().getMessage("lblChooseRollToSwap"), rolls);
+    }
+
+    @Override
+    public String chooseRollSwapValue(List<String> swapChoices, Integer currentResult, int power, int toughness) {
+        return getGui().oneOrNone(Localizer.getInstance().getMessage("lblChooseSwapPT", currentResult, power, toughness), swapChoices);
+    }
+
+    @Override
     public Object vote(final SpellAbility sa, final String prompt, final List<Object> options,
                        final ListMultimap<Object, Player> votes, Player forPlayer, boolean optional) {
-        if (optional) {
-            return getGui().oneOrNone(prompt, options);
+        if (sa.hasParam("Choices")) {
+            return chooseSpellAbilitiesForEffect(Lists.newArrayList(IterableUtil.filter(options, SpellAbility.class)), sa, prompt, 1, null).get(0);
         }
-        return getGui().one(prompt, options);
+        return chooseSingleEntityForEffect(new FCollection<>(IterableUtil.filter(options, GameEntity.class)), sa, prompt, optional, null);
     }
 
     /*
@@ -1624,6 +1708,9 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
                 break;
             case AddOrRemove:
                 labels = ImmutableList.of(localizer.getMessage("lblAddCounter"), localizer.getMessage("lblRemoveCounter"));
+                break;
+            case IncreaseOrDecrease:
+                labels = ImmutableList.of(localizer.getMessage("lblIncrease"), localizer.getMessage("lblDecrease"));
                 break;
             default:
                 labels = ImmutableList.copyOf(kindOfChoice.toString().split("Or"));
@@ -1920,6 +2007,12 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
         return HumanPlay.payCostDuringAbilityResolve(this, player, sa.getHostCard(), cost, sa, prompt);
     }
 
+    @Override
+    public boolean payCostDuringRoll(final Cost cost, final SpellAbility sa, final FCollectionView<Player> allPayers) {
+        // if it's paid by the AI already the human can pay, but it won't change anything
+        return HumanPlay.payCostDuringAbilityResolve(this, player, sa.getHostCard(), cost, sa, null);
+    }
+
     // stores saved order for different sets of SpellAbilities
     private final Map<String, List<Integer>> orderedSALookup = Maps.newHashMap();
 
@@ -2205,7 +2298,7 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
             final Map<DeckSection, List<? extends PaperCard>> removedUnplayableCards = unplayable.get(p);
             final List<Object> labels = new ArrayList<>();
             for (final DeckSection s : new TreeSet<>(removedUnplayableCards.keySet())) {
-                labels.add("=== " + DeckAIUtils.getLocalizedDeckSection(localizer, s) + " ===");
+                labels.add("=== " + s.getLocalizedName() + " ===");
                 labels.addAll(removedUnplayableCards.get(s));
             }
             getGui().reveal(localizer.getMessage("lblActionFromPlayerDeck", message, Lang.getInstance().getPossessedObject(MessageUtil.mayBeYou(player, p), "")),
@@ -2673,7 +2766,7 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
                 if (!inp.hasCancelled()) {
                     CardCollection untapped = new CardCollection();
                     for (final Card c : inp.getSelected()) {
-                        if (c.untap(true)) untapped.add(c);
+                        if (c.untap()) untapped.add(c);
                     }
                     if (!untapped.isEmpty()) {
                         final Map<AbilityKey, Object> runParams = AbilityKey.newMap();
@@ -2871,8 +2964,7 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
                             }
                         } else {
                             forgeCard.changeToState(forgeCard.getRules().getSplitType().getChangedStateName());
-                            if (forgeCard.getCurrentStateName().equals(CardStateName.Transformed) ||
-                                    forgeCard.getCurrentStateName().equals(CardStateName.Modal)) {
+                            if (forgeCard.getCurrentStateName().equals(CardStateName.Backside)) {
                                 forgeCard.setBackSide(true);
                             }
                         }

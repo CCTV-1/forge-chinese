@@ -85,10 +85,6 @@ public abstract class GameStage extends Stage {
     protected final Array<TextraButton> dialogButtonMap = new Array<>();
     TextraButton selectedKey;
 
-    public boolean getDialogOnlyInput() {
-        return dialogOnlyInput;
-    }
-
     public Dialog getDialog() {
         return dialog;
     }
@@ -113,7 +109,8 @@ public abstract class GameStage extends Stage {
         dialog.show(dialogStage, Actions.show());
         dialog.setPosition((dialogStage.getWidth() - dialog.getWidth()) / 2, (dialogStage.getHeight() - dialog.getHeight()) / 2);
         dialogOnlyInput = true;
-        if (Forge.hasGamepad() && !dialogButtonMap.isEmpty())
+
+        if (Forge.hasExternalInput() && !dialogButtonMap.isEmpty())
             dialogStage.setKeyboardFocus(dialogButtonMap.first());
     }
 
@@ -124,13 +121,23 @@ public abstract class GameStage extends Stage {
         dialog.clearListeners();
     }
 
+    /**
+     * Triggered when the hud is showing a dialog, which is tracked separately
+     * @param isShowing Whether a dialog is currently showing
+     */
+    public void hudIsShowingDialog(boolean isShowing) {
+        dialogOnlyInput = isShowing;
+    }
+
     public void effectDialog(EffectData effectData) {
         dialog.getButtonTable().clear();
         dialog.getContentTable().clear();
         dialog.clearListeners();
         TextraButton ok = Controls.newTextButton("OK", this::hideDialog);
         ok.setVisible(false);
-        TypingLabel L = Controls.newTypingLabel("{GRADIENT=CYAN;WHITE;1;1}Strange magical energies flow within this place...{ENDGRADIENT}\nAll opponents get:\n" + effectData.getDescription());
+        TypingLabel L = Controls.newTypingLabel("{GRADIENT=CYAN;WHITE;1;1}" +
+                Forge.getLocalizer().getMessage("lblEffectDialogDescription") + "{ENDGRADIENT}\n" +
+                Forge.getLocalizer().getMessage("lblEffectDataHeader") + "\n" + effectData.getDescription());
         L.setWrap(true);
         L.setTypingListener(new TypingAdapter() {
             @Override
@@ -186,7 +193,7 @@ public abstract class GameStage extends Stage {
         showDialog();
     }
 
-    public void showDeckAwardDialog(String message, Deck deck) {
+    public void showDeckAwardDialog(String message, Deck deck, Runnable runnable) {
         dialog.getContentTable().clear();
         dialog.getButtonTable().clear();
         dialog.clearListeners();
@@ -231,7 +238,11 @@ public abstract class GameStage extends Stage {
         L.skipToTheEnd();
 
         dialog.getContentTable().add(L).width(250);
-        dialog.getButtonTable().add(Controls.newTextButton("OK", this::hideDialog)).width(240);
+        dialog.getButtonTable().add(Controls.newTextButton("OK", () -> {
+            hideDialog();
+            if (runnable != null)
+                runnable.run();
+        })).width(240);
         dialog.setKeepWithinStage(true);
         setDialogStage(GameHUD.getInstance());
         showDialog();
@@ -571,9 +582,6 @@ public abstract class GameStage extends Stage {
             player.getMovementDirection().y = 0;
             if (!player.isMoving())
                 stop();
-        }
-        if (KeyBinding.Menu.isPressed(keycode)) {
-            openMenu();
         }
         return false;
     }

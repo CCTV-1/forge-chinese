@@ -533,11 +533,8 @@ public class CardPanel extends SkinnedPanel implements CardContainer, IDisposabl
 
         }
 
-        if (card.getCurrentRoom() != null && !card.getCurrentRoom().isEmpty()) {
-            List<String> markers = new ArrayList<>();
-            markers.add("In Room:");
-            markers.add(card.getCurrentRoom());
-            drawMarkersTabs(g, markers);
+        if(card.getMarkerText() != null) {
+            drawMarkersTabs(g, card.getMarkerText());
         }
 
         final int combatXSymbols = (cardXOffset + (cardWidth / 4)) - 16;
@@ -1049,7 +1046,7 @@ public class CardPanel extends SkinnedPanel implements CardContainer, IDisposabl
         else if (state.isCreature()) {
             sPt = state.getPower() + "/" + state.getToughness();
         }
-        else if (state.getType().hasSubtype("Vehicle")) {
+        else if (state.isVehicle()) {
             sPt = "[" + state.getPower() + "/" + state.getToughness() + "]";
         }
         else if (state.isPlaneswalker()) {

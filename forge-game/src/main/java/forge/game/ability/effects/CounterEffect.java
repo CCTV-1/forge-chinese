@@ -22,6 +22,13 @@ import java.util.Map;
 
 public class CounterEffect extends SpellAbilityEffect {
     @Override
+    public void buildSpellAbility(SpellAbility sa) {
+        if (sa.usesTargeting()) {
+            sa.getTargetRestrictions().setZone(ZoneType.Stack);
+        }
+    }
+
+    @Override
     protected String getStackDescription(SpellAbility sa) {
         final StringBuilder sb = new StringBuilder();
 
@@ -257,7 +264,7 @@ public class CounterEffect extends SpellAbilityEffect {
 
         params.put(AbilityKey.StackSa, tgtSA);
 
-        String destination =  srcSA.hasParam("Destination") ? srcSA.getParam("Destination") : tgtSA.isAftermath() ? "Exile" : "Graveyard";
+        String destination = srcSA.getParamOrDefault("Destination", "Graveyard");
         if (srcSA.hasParam("DestinationChoice")) { //Hinder
             List<String> pos = Arrays.asList(srcSA.getParam("DestinationChoice").split(","));
             destination = srcSA.getActivatingPlayer().getController().chooseSomeType(Localizer.getInstance().getMessage("lblRemoveDestination"), tgtSA, pos);

@@ -70,7 +70,7 @@ public class CombatUtil {
         final Game game = playerWhoAttacks.getGame();
         final CardCollection battles = CardLists.filter(game.getCardsIn(ZoneType.Battlefield), CardPredicates.BATTLES);
         for (Card battle : battles) {
-            if (battle.getType().hasSubtype("Siege") && battle.getProtectingPlayer().isOpponentOf(playerWhoAttacks)) {
+            if (battle.getProtectingPlayer().isOpponentOf(playerWhoAttacks)) {
                 defenders.add(battle);
             }
         }
@@ -200,6 +200,10 @@ public class CombatUtil {
 
     private static boolean canAttack(final Card attacker, final GameEntity defender, final boolean forNextTurn) {
         final Game game = attacker.getGame();
+
+        if (attacker.isBattle()) {
+            return false;
+        }
 
         // Basic checks (unless is for next turn)
         if (!forNextTurn && (
@@ -374,7 +378,6 @@ public class CombatUtil {
         final GameEntity defender = combat.getDefenderByAttacker(c);
         final List<Card> otherAttackers = combat.getAttackers();
 
-        // Run triggers
         if (triggers) {
             final Map<AbilityKey, Object> runParams = AbilityKey.newMap();
             runParams.put(AbilityKey.Attacker, c);
@@ -477,16 +480,26 @@ public class CombatUtil {
      * @return a boolean.
      */
     public static boolean canBlock(final Card blocker, final boolean nextTurn) {
-        if (blocker == null) {
+        if (blocker == null || !blocker.isCreature()) {
             return false;
         }
 
-        if (!nextTurn && blocker.isTapped() && !blocker.hasKeyword("CARDNAME can block as though it were untapped.")) {
+        if (blocker.isBattle()) {
             return false;
         }
 
-        if (blocker.hasKeyword("CARDNAME can't block.") || blocker.hasKeyword("CARDNAME can't attack or block.")
-                || blocker.isPhasedOut()) {
+        if (!nextTurn && blocker.isPhasedOut()) {
+            return false;
+        }
+
+        if (!nextTurn && blocker.isTapped() && !StaticAbilityCantAttackBlock.canBlockTapped(blocker)) {
+            return false;
+        }
+
+        if (blocker.hasKeyword("CARDNAME can't block.") || blocker.hasKeyword("CARDNAME can't attack or block.")) {
+            return false;
+        }
+        if (StaticAbilityCantAttackBlock.cantBlock(blocker)) {
             return false;
         }
 
@@ -989,7 +1002,7 @@ public class CombatUtil {
      * @return a boolean.
      */
     public static boolean canBlock(final Card attacker, final Card blocker, final boolean nextTurn) {
-        if (attacker == null || blocker == null) {
+        if (attacker == null || blocker == null || !blocker.isCreature()) {
             return false;
         }
 

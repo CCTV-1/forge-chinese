@@ -256,6 +256,15 @@ public class MagicStack /* extends MyObservable */ implements Iterable<SpellAbil
             System.out.println(source.getName() + " - activatingPlayer not set before adding to stack.");
         }
 
+        // Stop infinite loop. E.g. Scalelord Reckoner mirrormatch with only triggering targets is a draw.
+        if (game.getStack().size() > 999) {
+            for (Player p : game.getPlayers()) {
+                p.intentionalDraw();
+            }
+            game.setGameOver(GameEndReason.Draw);
+            return;
+        }
+
         recordUndoableActions(sp, activator);
 
         if (sp.isManaAbility()) { // Mana Abilities go straight through
@@ -266,8 +275,8 @@ public class MagicStack /* extends MyObservable */ implements Iterable<SpellAbil
                 // Copied abilities aren't activated, so they shouldn't change these values
                 addAbilityActivatedThisTurn(sp, source);
             }
-            Map<AbilityKey, Object> runParams = AbilityKey.mapFromPlayer(source.getController());
-            runParams.put(AbilityKey.Cost, sp.getPayCosts());
+
+            Map<AbilityKey, Object> runParams = AbilityKey.newMap();
             runParams.put(AbilityKey.Activator, activator);
             runParams.put(AbilityKey.SpellAbility, sp);
             game.getTriggerHandler().runTrigger(TriggerType.SpellAbilityCast, runParams, true);
@@ -277,12 +286,17 @@ public class MagicStack /* extends MyObservable */ implements Iterable<SpellAbil
 
             AbilityUtils.resolve(sp);
 
-            final Map<AbilityKey, Object> runParams2 = AbilityKey.mapFromCard(source);
-            runParams2.put(AbilityKey.SpellAbility, sp);
-            game.getTriggerHandler().runTrigger(TriggerType.AbilityResolves, runParams2, false);
+            runParams = AbilityKey.mapFromCard(source);
+            runParams.put(AbilityKey.SpellAbility, sp);
+            game.getTriggerHandler().runTrigger(TriggerType.AbilityResolves, runParams, false);
 
-            game.getGameLog().add(GameLogEntryType.MANA, source + " - " + sp.getDescription());
+            game.getGameLog().add(GameLogEntryType.MANA, source + " - " + sp);
             sp.resetOnceResolved();
+
+            // parts are paid sequentially, so collect directly or some trigger might get lost
+            if (game.costPaymentStack.peek() != null) {
+                game.getTriggerHandler().collectTriggerForWaiting();
+            }
             return;
         }
 
@@ -350,7 +364,7 @@ public class MagicStack /* extends MyObservable */ implements Iterable<SpellAbil
         si = push(sp, si, id);
 
         // Copied spells aren't cast per se so triggers shouldn't run for them.
-        Map<AbilityKey, Object> runParams = AbilityKey.mapFromPlayer(sp.getHostCard().getController());
+        Map<AbilityKey, Object> runParams = AbilityKey.newMap();
 
         if (sp.isSpell() && !sp.isCopied()) {
             final Card lki = CardCopyService.getLKICopy(sp.getHostCard());
@@ -388,9 +402,8 @@ public class MagicStack /* extends MyObservable */ implements Iterable<SpellAbil
             }
         }
 
-        runParams.put(AbilityKey.Cost, sp.getPayCosts());
         runParams.put(AbilityKey.Activator, sp.getActivatingPlayer());
-        runParams.put(AbilityKey.SpellAbility, si.getSpellAbility());
+        runParams.put(AbilityKey.SpellAbility, sp);
         runParams.put(AbilityKey.CurrentStormCount, thisTurnCast.size());
         runParams.put(AbilityKey.CurrentCastSpells, Lists.newArrayList(thisTurnCast));
 
@@ -420,11 +433,25 @@ public class MagicStack /* extends MyObservable */ implements Iterable<SpellAbil
                 activator.addCycled(sp);
             }
 
-            if (sp.isCrew()) {
-                // Trigger crews!
-                runParams.put(AbilityKey.Vehicle, sp.getHostCard());
-                runParams.put(AbilityKey.Crew, sp.getPaidList("TappedCards", true));
-                game.getTriggerHandler().runTrigger(TriggerType.Crewed, runParams, false);
+            if (sp.isCrew() && sp.getHostCard().getType().hasSubtype("Vehicle")) {
+                Iterable<Card> crews = sp.getPaidList("Tapped", true);
+                if (crews != null) {
+                    for (Card c : crews) {
+                        Map<AbilityKey, Object> crewParams = AbilityKey.mapFromCard(sp.getHostCard());
+                        crewParams.put(AbilityKey.Crew, c);
+                        game.getTriggerHandler().runTrigger(TriggerType.Crewed, crewParams, false);
+                    }
+                }
+            }
+            if (sp.isKeyword(Keyword.SADDLE) && sp.getHostCard().getType().hasSubtype("Mount")) {
+                Iterable<Card> crews = sp.getPaidList("Tapped", true);
+                if (crews != null) {
+                    for (Card c : crews) {
+                        Map<AbilityKey, Object> saddleParams = AbilityKey.mapFromCard(sp.getHostCard());
+                        saddleParams.put(AbilityKey.Crew, c);
+                        game.getTriggerHandler().runTrigger(TriggerType.Saddled, saddleParams, false);
+                    }
+                }
             }
         } else {
             // Run Copy triggers
@@ -457,15 +484,16 @@ public class MagicStack /* extends MyObservable */ implements Iterable<SpellAbil
 
                     runParams = AbilityKey.newMap();
                     runParams.put(AbilityKey.SourceSA, s);
-                    if (tgt instanceof Card && !((Card) tgt).hasBecomeTargetThisTurn()) {
-                        runParams.put(AbilityKey.FirstTime, null);
-                        ((Card) tgt).setBecameTargetThisTurn(true);
-                    }
-                    if (tgt instanceof Card && !((Card) tgt).isValiant() && activator.equals(((Card) tgt).getController())) {
-                        runParams.put(AbilityKey.Valiant, null);
-                        ((Card) tgt).setValiant(true);
-                    }
                     runParams.put(AbilityKey.Target, tgt);
+                    if (tgt instanceof Card c) {
+                        if (!c.hasBecomeTargetThisTurn()) {
+                            runParams.put(AbilityKey.FirstTime, null);
+                        }
+                        if (c.isValiant(activator)) {
+                            runParams.put(AbilityKey.Valiant, null);
+                        }
+                        c.addTargetFromThisTurn(activator);
+                    }
                     game.getTriggerHandler().runTrigger(TriggerType.BecomesTarget, runParams, false);
                 }
             }
@@ -827,7 +855,7 @@ public class MagicStack /* extends MyObservable */ implements Iterable<SpellAbil
             return false;
         }
 
-        if (playerTurn.hasLost()) {
+        if (!playerTurn.isInGame()) {
             playerTurn = game.getNextPlayerAfter(playerTurn);
         }
 

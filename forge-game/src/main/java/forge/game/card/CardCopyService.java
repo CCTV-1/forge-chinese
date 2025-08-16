@@ -66,8 +66,15 @@ public class CardCopyService {
             out.setCollectible(copyFrom.isCollectible());
 
             // this's necessary for forge.game.GameAction.unattachCardLeavingBattlefield(Card)
-            out.setAttachedCards(copyFrom.getAttachedCards());
-            out.setEntityAttachedTo(copyFrom.getEntityAttachedTo());
+            if (copyFrom.hasCardAttachments()) {
+                out.setAttachedCards(copyFrom.getAttachedCards());
+            }
+            if (copyFrom.isAttachedToEntity()) {
+                out.setEntityAttachedTo(copyFrom.getEntityAttachedTo());
+            }
+            if (copyFrom.hasMergedCard()) {
+                out.setMergedCards(copyFrom.getMergedCards());
+            }
 
             out.setLeavesPlayCommands(copyFrom.getLeavesPlayCommands());
 
@@ -143,7 +150,7 @@ public class CardCopyService {
         }
 
         final boolean fromIsFlipCard = copyFrom.isFlipCard();
-        final boolean fromIsTransformedCard = copyFrom.getCurrentStateName() == CardStateName.Transformed || copyFrom.getCurrentStateName() == CardStateName.Meld;
+        final boolean fromIsTransformedCard = copyFrom.getCurrentStateName() == CardStateName.Backside || copyFrom.getCurrentStateName() == CardStateName.Meld;
 
         if (fromIsFlipCard) {
             if (to.getCurrentStateName().equals(CardStateName.Flipped)) {
@@ -156,7 +163,7 @@ public class CardCopyService {
                 && sourceSA != null && ApiType.CopySpellAbility.equals(sourceSA.getApi())
                 && targetSA != null && targetSA.isSpell() && targetSA.getHostCard().isPermanent()) {
             copyState(copyFrom, CardStateName.Original, to, CardStateName.Original);
-            copyState(copyFrom, CardStateName.Transformed, to, CardStateName.Transformed);
+            copyState(copyFrom, CardStateName.Backside, to, CardStateName.Backside);
             // 707.10g If an effect creates a copy of a transforming permanent spell, the copy is also a transforming permanent spell that has both a front face and a back face.
             // The characteristics of its front and back face are determined by the copiable values of the same face of the spell it is a copy of, as modified by any other copy effects.
             // If the spell it is a copy of has its back face up, the copy is created with its back face up. The token that’s put onto the battlefield as that spell resolves is a transforming token.
@@ -214,8 +221,8 @@ public class CardCopyService {
         if (cachedCard != null) {
             return cachedCard;
         }
-        String msg = "CardUtil:getLKICopy copy object";
 
+        String msg = "CardUtil:getLKICopy copy object";
         Breadcrumb bread = new Breadcrumb(msg);
         bread.setData("Card", copyFrom.getName());
         bread.setData("CardState", copyFrom.getCurrentStateName().toString());
@@ -250,12 +257,12 @@ public class CardCopyService {
             newCopy.getState(CardStateName.Flipped).copyFrom(copyFrom.getState(CardStateName.Flipped), true);
         } else if (copyFrom.isTransformable()) {
             newCopy.getState(CardStateName.Original).copyFrom(copyFrom.getState(CardStateName.Original), true);
-            newCopy.addAlternateState(CardStateName.Transformed, false);
-            newCopy.getState(CardStateName.Transformed).copyFrom(copyFrom.getState(CardStateName.Transformed), true);
-        } else if (copyFrom.isAdventureCard()) {
+            newCopy.addAlternateState(CardStateName.Backside, false);
+            newCopy.getState(CardStateName.Backside).copyFrom(copyFrom.getState(CardStateName.Backside), true);
+        } else if (copyFrom.hasState(CardStateName.Secondary)) {
             newCopy.getState(CardStateName.Original).copyFrom(copyFrom.getState(CardStateName.Original), true);
-            newCopy.addAlternateState(CardStateName.Adventure, false);
-            newCopy.getState(CardStateName.Adventure).copyFrom(copyFrom.getState(CardStateName.Adventure), true);
+            newCopy.addAlternateState(CardStateName.Secondary, false);
+            newCopy.getState(CardStateName.Secondary).copyFrom(copyFrom.getState(CardStateName.Secondary), true);
         } else if (copyFrom.isSplitCard()) {
             newCopy.getState(CardStateName.Original).copyFrom(copyFrom.getState(CardStateName.Original), true);
             newCopy.addAlternateState(CardStateName.LeftSplit, false);
@@ -304,19 +311,20 @@ public class CardCopyService {
 
         newCopy.setCounters(Maps.newHashMap(copyFrom.getCounters()));
 
+        newCopy.setColor(copyFrom.getColor().getColor());
+        newCopy.setPhasedOut(copyFrom.getPhasedOut());
+        newCopy.setTapped(copyFrom.isTapped());
         newCopy.setTributed(copyFrom.isTributed());
+        newCopy.setUnearthed(copyFrom.isUnearthed());
         newCopy.setMonstrous(copyFrom.isMonstrous());
         newCopy.setRenowned(copyFrom.isRenowned());
         newCopy.setSolved(copyFrom.isSolved());
-        newCopy.setSaddled(copyFrom.isSaddled());
         newCopy.setPromisedGift(copyFrom.getPromisedGift());
+        newCopy.setSaddled(copyFrom.isSaddled());
         if (newCopy.isSaddled()) newCopy.setSaddledByThisTurn(copyFrom.getSaddledByThisTurn());
-        newCopy.setSuspectedTimestamp(copyFrom.getSuspectedTimestamp());
-
-        newCopy.setColor(copyFrom.getColor().getColor());
-        newCopy.setPhasedOut(copyFrom.getPhasedOut());
-
-        newCopy.setTapped(copyFrom.isTapped());
+        if (copyFrom.isSuspected()) {
+            newCopy.setSuspectedEffect(getLKICopy(copyFrom.getSuspectedEffect(), cachedMap));
+        }
 
         newCopy.setDamageHistory(copyFrom.getDamageHistory());
         newCopy.setDamageReceivedThisTurn(copyFrom.getDamageReceivedThisTurn());
@@ -352,10 +360,6 @@ public class CardCopyService {
         }
         newCopy.setChosenEvenOdd(copyFrom.getChosenEvenOdd());
 
-        //newCopy.getEtbCounters().putAll(copyFrom.getEtbCounters());
-
-        newCopy.setUnearthed(copyFrom.isUnearthed());
-
         newCopy.copyFrom(copyFrom);
 
         // for getReplacementList (run after setChangedCardKeywords for caching)
@@ -363,14 +367,17 @@ public class CardCopyService {
         newCopy.setStoredReplacements(copyFrom.getStoredReplacements());
 
         newCopy.copyChangedTextFrom(copyFrom);
+        newCopy.changedTypeByText = copyFrom.changedTypeByText;
+        newCopy.changedCardKeywordsByWord = copyFrom.changedCardKeywordsByWord.copy(newCopy, true);
 
         newCopy.setGameTimestamp(copyFrom.getGameTimestamp());
         newCopy.setLayerTimestamp(copyFrom.getLayerTimestamp());
 
         newCopy.setBestowTimestamp(copyFrom.getBestowTimestamp());
 
-        newCopy.setForetold(copyFrom.isForetold());
         newCopy.setTurnInZone(copyFrom.getTurnInZone());
+
+        newCopy.setForetold(copyFrom.isForetold());
         newCopy.setForetoldCostByEffect(copyFrom.isForetoldCostByEffect());
 
         newCopy.setPlotted(copyFrom.isPlotted());
@@ -392,6 +399,7 @@ public class CardCopyService {
 
         newCopy.setExiledBy(copyFrom.getExiledBy());
         newCopy.setExiledWith(getLKICopy(copyFrom.getExiledWith(), cachedMap));
+        newCopy.setExiledSA(copyFrom.getExiledSA());
         newCopy.addExiledCards(copyFrom.getExiledCards());
 
         newCopy.setDiscarded(copyFrom.wasDiscarded());

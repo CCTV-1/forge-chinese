@@ -31,7 +31,7 @@ import forge.game.combat.Combat;
 import forge.game.combat.CombatUtil;
 import forge.game.cost.CostPayment;
 import forge.game.keyword.Keyword;
-import forge.game.phase.Untap;
+import forge.game.phase.PhaseType;
 import forge.game.player.Player;
 import forge.game.replacement.ReplacementEffect;
 import forge.game.replacement.ReplacementLayer;
@@ -39,6 +39,7 @@ import forge.game.replacement.ReplacementType;
 import forge.game.spellability.SpellAbility;
 import forge.game.staticability.StaticAbility;
 import forge.game.staticability.StaticAbilityAssignCombatDamageAsUnblocked;
+import forge.game.staticability.StaticAbilityMode;
 import forge.game.staticability.StaticAbilityMustAttack;
 import forge.game.trigger.Trigger;
 import forge.game.trigger.TriggerType;
@@ -101,7 +102,7 @@ public class ComputerUtilCombat {
             return false;
         }
 
-        if (attacker.getGame().getReplacementHandler().wouldPhaseBeSkipped(attacker.getController(), "BeginCombat")) {
+        if (attacker.getGame().getReplacementHandler().wouldPhaseBeSkipped(attacker.getController(), PhaseType.COMBAT_BEGIN)) {
             return false;
         }
 
@@ -118,7 +119,7 @@ public class ComputerUtilCombat {
         //        || (attacker.hasKeyword(Keyword.FADING) && attacker.getCounters(CounterEnumType.FADE) == 0)
         //        || attacker.hasSVar("EndOfTurnLeavePlay"));
         // The creature won't untap next turn
-        return !attacker.isTapped() || (attacker.getCounters(CounterEnumType.STUN) == 0 && Untap.canUntap(attacker));
+        return !attacker.isTapped() || (attacker.getCounters(CounterEnumType.STUN) == 0 && attacker.canUntap(attacker.getController(), true));
     }
 
     /**
@@ -176,7 +177,7 @@ public class ComputerUtilCombat {
     public static int damageIfUnblocked(final Card attacker, final GameEntity attacked, final Combat combat, boolean withoutAbilities) {
         int damage = attacker.getNetCombatDamage();
         int sum = 0;
-        if (attacked instanceof Player && !((Player) attacked).canLoseLife()) {
+        if (attacked instanceof Player player && !player.canLoseLife()) {
             return 0;
         }
 
@@ -214,7 +215,7 @@ public class ComputerUtilCombat {
         int damage = attacker.getNetCombatDamage();
         int poison = 0;
         damage += predictPowerBonusOfAttacker(attacker, null, null, false);
-        if (attacker.hasKeyword(Keyword.INFECT)) {
+        if (attacker.isInfectDamage(attacked)) {
             int pd = predictDamageTo(attacked, damage, attacker, true);
             // opponent can always order it so that he gets 0
             if (pd == 1 && attacker.getController().getOpponents().getCardsIn(ZoneType.Battlefield).anyMatch(CardPredicates.nameEquals("Vorinclex, Monstrous Raider"))) {
@@ -357,7 +358,7 @@ public class ComputerUtilCombat {
             } else if (attacker.hasKeyword(Keyword.TRAMPLE)) {
                 int trampleDamage = getAttack(attacker) - totalShieldDamage(attacker, blockers);
                 if (trampleDamage > 0) {
-                    if (attacker.hasKeyword(Keyword.INFECT)) {
+                    if (attacker.isInfectDamage(ai)) {
                         poison += trampleDamage;
                     }
                     poison += predictExtraPoisonWithDamage(attacker, ai, trampleDamage);
@@ -457,11 +458,11 @@ public class ComputerUtilCombat {
             maxTreshold--;
         }
 
-        if (!ai.cantLoseForZeroOrLessLife() && lifeThatWouldRemain(ai, combat) - payment < Math.min(threshold, ai.getLife())) {
+        if (resultingPoison(ai, combat) > Math.max(7, ai.getPoisonCounters())) {
             return true;
         }
 
-        return resultingPoison(ai, combat) > Math.max(7, ai.getPoisonCounters());
+        return !ai.cantLoseForZeroOrLessLife() && lifeThatWouldRemain(ai, combat) - payment < Math.min(threshold, ai.getLife());
     }
 
     /**
@@ -500,11 +501,11 @@ public class ComputerUtilCombat {
             }
         }
 
-        if (!ai.cantLoseForZeroOrLessLife() && lifeThatWouldRemain(ai, combat) - payment < 1) {
+        if (resultingPoison(ai, combat) >= ai.getGame().getRules().getPoisonCountersToLose()) {
             return true;
         }
 
-        return resultingPoison(ai, combat) >= ai.getGame().getRules().getPoisonCountersToLose();
+        return !ai.cantLoseForZeroOrLessLife() && lifeThatWouldRemain(ai, combat) - payment < 1;
     }
 
     // This calculates the amount of damage a blockgang can deal to the attacker
@@ -900,7 +901,7 @@ public class ComputerUtilCombat {
         final CardCollectionView cardList = CardCollection.combine(game.getCardsIn(ZoneType.Battlefield), game.getCardsIn(ZoneType.Command));
         for (final Card card : cardList) {
             for (final StaticAbility stAb : card.getStaticAbilities()) {
-                if (!stAb.checkMode("Continuous")) {
+                if (!stAb.checkMode(StaticAbilityMode.Continuous)) {
                     continue;
                 }
                 if (!stAb.hasParam("Affected") || !stAb.getParam("Affected").contains("blocking")) {
@@ -1196,7 +1197,7 @@ public class ComputerUtilCombat {
             final CardCollectionView cardList = CardCollection.combine(game.getCardsIn(ZoneType.Battlefield), game.getCardsIn(ZoneType.Command));
             for (final Card card : cardList) {
                 for (final StaticAbility stAb : card.getStaticAbilities()) {
-                    if (!stAb.checkMode("Continuous")) {
+                    if (!stAb.checkMode(StaticAbilityMode.Continuous)) {
                         continue;
                     }
                     if (!stAb.hasParam("Affected") || !stAb.getParam("Affected").contains("attacking")) {
@@ -1387,7 +1388,7 @@ public class ComputerUtilCombat {
             final CardCollectionView cardList = game.getCardsIn(ZoneType.Battlefield);
             for (final Card card : cardList) {
                 for (final StaticAbility stAb : card.getStaticAbilities()) {
-                    if (!"Continuous".equals(stAb.getParam("Mode"))) {
+                    if (!stAb.checkMode(StaticAbilityMode.Continuous)) {
                         continue;
                     }
                     if (!stAb.hasParam("Affected")) {
@@ -1734,6 +1735,7 @@ public class ComputerUtilCombat {
         final int attackerLife = getDamageToKill(attacker, false)
                 + predictToughnessBonusOfAttacker(attacker, blocker, combat, withoutAbilities, withoutAttackerStaticAbilities);
 
+        // AI should be less worried about Deathtouch
         if (blocker.hasDoubleStrike()) {
             if (defenderDamage > 0 && (hasKeyword(blocker, "Deathtouch", withoutAbilities, combat) || attacker.hasSVar("DestroyWhenDamaged"))) {
                 return true;
@@ -1963,6 +1965,7 @@ public class ComputerUtilCombat {
         final int attackerLife = getDamageToKill(attacker, false)
                 + predictToughnessBonusOfAttacker(attacker, blocker, combat, withoutAbilities, withoutAttackerStaticAbilities);
 
+        // AI should be less worried about deathtouch
         if (attacker.hasDoubleStrike()) {
             if (attackerDamage >= defenderLife) {
                 return true;
@@ -2539,20 +2542,20 @@ public class ComputerUtilCombat {
         if (combat != null) {
             GameEntity def = combat.getDefenderByAttacker(sa.getHostCard());
             // 1. If the card that spawned the attacker was sent at a card, attack the same. Consider improving.
-            if (def instanceof Card && Iterables.contains(defenders, def)) {
-                if (((Card) def).isPlaneswalker()) {
+            if (def instanceof Card card && Iterables.contains(defenders, def)) {
+                if (card.isPlaneswalker()) {
                     return def;
                 }
-                if (((Card) def).isBattle()) {
+                if (card.isBattle()) {
                     return def;
                 }
             }
             // 2. Otherwise, go through the list of options one by one, choose the first one that can't be blocked profitably.
             for (GameEntity p : defenders) {
-                if (p instanceof Player && !ComputerUtilCard.canBeBlockedProfitably((Player)p, attacker, true)) {
+                if (p instanceof Player p1 && !ComputerUtilCard.canBeBlockedProfitably(p1, attacker, true)) {
                     return p;
                 }
-                if (p instanceof Card && !ComputerUtilCard.canBeBlockedProfitably(((Card)p).getController(), attacker, true)) {
+                if (p instanceof Card card && !ComputerUtilCard.canBeBlockedProfitably(card.getController(), attacker, true)) {
                     return p;
                 }
             }

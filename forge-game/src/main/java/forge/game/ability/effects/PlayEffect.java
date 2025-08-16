@@ -276,13 +276,13 @@ public class PlayEffect extends SpellAbilityEffect {
             CardStateName state = CardStateName.Original;
 
             if (sa.hasParam("CastTransformed")) {
-                if (!tgtCard.changeToState(CardStateName.Transformed)) {
+                if (!tgtCard.changeToState(CardStateName.Backside)) {
                     // Failed to transform. In the future, we might need to just remove this option and continue
                     amount--;
                     System.err.println("CastTransformed failed for '" + tgtCard + "'.");
                     continue;
                 }
-                state = CardStateName.Transformed;
+                state = CardStateName.Backside;
             }
 
             List<SpellAbility> sas = AbilityUtils.getSpellsFromPlayEffect(tgtCard, controller, state, !altCost);
@@ -361,7 +361,6 @@ public class PlayEffect extends SpellAbilityEffect {
                 continue;
             }
 
-            boolean unpayableCost = tgtSA.getPayCosts().getCostMana().getMana().isNoCost();
             if (sa.hasParam("WithoutManaCost")) {
                 tgtSA = tgtSA.copyWithNoManaCost();
             } else if (sa.hasParam("PlayCost")) {
@@ -380,7 +379,8 @@ public class PlayEffect extends SpellAbilityEffect {
                 }
 
                 tgtSA = tgtSA.copyWithManaCostReplaced(tgtSA.getActivatingPlayer(), abCost);
-            } else if (unpayableCost) {
+            } else if (tgtSA.getPayCosts().hasManaCost() && tgtSA.getPayCosts().getCostMana().getMana().isNoCost()) {
+                // unpayable
                 continue;
             }
 

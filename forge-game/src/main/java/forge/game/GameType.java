@@ -22,8 +22,9 @@ public enum GameType {
     Winston             (DeckFormat.Limited, true, true, true, "lblWinston", ""),
     Gauntlet            (DeckFormat.Constructed, false, true, true, "lblGauntlet", ""),
     Tournament          (DeckFormat.Constructed, false, true, true, "lblTournament", ""),
-    CommanderGauntlet   (DeckFormat.Commander, false, false, false, "lblCommander", "lblCommanderDesc"),
+    CommanderGauntlet   (DeckFormat.Commander, false, false, false, "lblCommanderGauntlet", "lblCommanderDesc"),
     Quest               (DeckFormat.QuestDeck, true, true, false, "lblQuest", ""),
+    QuestCommander      (DeckFormat.Commander, true, true, false, "lblQuestCommander", ""),
     QuestDraft          (DeckFormat.Limited, true, true, true, "lblQuestDraft", ""),
     PlanarConquest      (DeckFormat.PlanarConquest, true, false, false, "lblPlanarConquest", ""),
     Adventure           (DeckFormat.Adventure, true, false, false, "lblAdventure", ""),
@@ -71,13 +72,14 @@ public enum GameType {
         return deck;
     });
 
+    private static final EnumSet<GameType> DRAFT_FORMATS = EnumSet.of(Draft, QuestDraft, AdventureEvent);
+
     private final DeckFormat deckFormat;
     private final boolean isCardPoolLimited, canSideboard, addWonCardsMidGame;
     private final String name, englishName, description;
     private final Function<RegisteredPlayer, Deck> deckAutoGenerator;
 
     GameType(DeckFormat deckFormat0, boolean isCardPoolLimited0, boolean canSideboard0, boolean addWonCardsMidgame0, String name0, String description0) {
-
         this(deckFormat0, isCardPoolLimited0, canSideboard0, addWonCardsMidgame0, name0, description0, null);
     }
     GameType(DeckFormat deckFormat0, boolean isCardPoolLimited0, boolean canSideboard0, boolean addWonCardsMidgame0, String name0, String description0, Function<RegisteredPlayer, Deck> deckAutoGenerator0) {
@@ -88,7 +90,7 @@ public enum GameType {
         addWonCardsMidGame = addWonCardsMidgame0;
         name = localizer.getMessage(name0);
         englishName = localizer.getEnglishMessage(name0);
-        if (description0.length()>0) {
+        if (!description0.isEmpty()) {
             description0 = localizer.getMessage(description0);
         }
         description = description0;
@@ -128,19 +130,8 @@ public enum GameType {
         return addWonCardsMidGame;
     }
 
-    public boolean isCommandZoneNeeded() {
-    	return true; //TODO: Figure out way to move command zone into field so it can be hidden when empty
-        /*switch (this) {
-        case Archenemy:
-        case Commander:
-        case Oathbreaker:
-        case TinyLeaders:
-        case Planechase:
-        case Vanguard:
-            return true;
-        default:
-            return false;
-        }*/
+    public boolean isDraft() {
+        return DRAFT_FORMATS.contains(this);
     }
 
     public String toString() {
@@ -152,6 +143,27 @@ public enum GameType {
 
     public String getDescription() {
         return description;
+    }
+
+    /**
+     * @return the deck sections used by most decks in this game type.
+     */
+    public EnumSet<DeckSection> getPrimaryDeckSections() {
+        return deckFormat.getPrimaryDeckSections();
+    }
+
+    /**
+     * @return the set of variant card sections that decks for this game type can include.
+     */
+    public EnumSet<DeckSection> getSupplimentalDeckSections() {
+        if(!deckFormat.getPrimaryDeckSections().contains(DeckSection.Main))
+            return EnumSet.noneOf(DeckSection.class); //Already an extra deck, like a dedicated Scheme or Planar deck.
+        if(deckFormat == DeckFormat.Limited)
+            return EnumSet.of(DeckSection.Conspiracy, DeckSection.Contraptions, DeckSection.Attractions);
+        if(this == Constructed || this == Commander)
+            return EnumSet.of(DeckSection.Avatar, DeckSection.Schemes, DeckSection.Planes, DeckSection.Conspiracy,
+                    DeckSection.Attractions, DeckSection.Contraptions);
+        return EnumSet.of(DeckSection.Attractions, DeckSection.Contraptions);
     }
 
     public static GameType smartValueOf(String name) {

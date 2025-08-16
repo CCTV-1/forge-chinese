@@ -79,6 +79,8 @@ public enum CounterEnumType {
 
     CARRION("CRRON", 255, 163, 222),
 
+    CELL ("CELL", 90, 10, 95),
+
     CHARGE("CHARG", 246, 192, 0),
 
     CHORUS("CHRUS", 0, 192, 246),
@@ -166,6 +168,8 @@ public enum CounterEnumType {
     FILIBUSTER("FLBTR", 255, 179, 119),
 
     FINALITY("FINAL", 255, 255, 255),
+
+    FIRE("FIRE", 240, 30, 35),
 
     FLAME("FLAME", 255, 143, 43),
     
@@ -355,6 +359,8 @@ public enum CounterEnumType {
 
     QUEST("QUEST", 251, 189, 0),
 
+    RALLY("RALLY", 25, 230, 225),
+
     RELEASE("RELEASE", 200, 210, 50),
 
     REPRIEVE("REPR", 240, 120, 50),
@@ -458,6 +464,8 @@ public enum CounterEnumType {
     WIND("WIND", 0, 236, 255),
 
     WISH("WISH", 255, 85, 206),
+    
+    WRECK("WRECK", 208, 55, 255),
 
     // Player Counters
 
@@ -477,6 +485,7 @@ public enum CounterEnumType {
     FIRSTSTRIKE("First Strike"),
     DOUBLESTRIKE("Double Strike"),
     DEATHTOUCH("Deathtouch"),
+    DECAYED("Decayed"),
     HASTE("Haste"),
     HEXPROOF("Hexproof"),
     INDESTRUCTIBLE("Indestructible"),
@@ -484,8 +493,8 @@ public enum CounterEnumType {
     MENACE("Menace"),
     REACH("Reach"),
     TRAMPLE("Trample"),
-    VIGILANCE("Vigilance")
-    SHADOW("Shadow")
+    VIGILANCE("Vigilance"),
+    SHADOW("Shadow"),
     EXALTED("Exalted")
 //*/
     ;

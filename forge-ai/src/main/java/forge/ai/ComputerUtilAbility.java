@@ -21,6 +21,7 @@ import forge.game.cost.CostRemoveCounter;
 import forge.game.keyword.Keyword;
 import forge.game.phase.PhaseType;
 import forge.game.player.Player;
+import forge.game.spellability.OptionalCost;
 import forge.game.spellability.OptionalCostValue;
 import forge.game.spellability.SpellAbility;
 import forge.game.spellability.SpellAbilityStackInstance;
@@ -122,6 +123,10 @@ public class ComputerUtilAbility {
             boolean choseOptCost = false;
             List<OptionalCostValue> list = GameActionUtil.getOptionalCostValues(sa);
             if (!list.isEmpty()) {
+                // still add base spell in case of Promise Gift
+                if (list.stream().anyMatch(ocv -> ocv.getType().equals(OptionalCost.PromiseGift))) {
+                    result.add(sa);
+                }
                 list = player.getController().chooseOptionalCosts(sa, list);
                 if (!list.isEmpty()) {
                     choseOptCost = true;
@@ -339,6 +344,10 @@ public class ComputerUtilAbility {
                 }
                 if (source.hasSVar("AIPriorityModifier")) {
                     p += Integer.parseInt(source.getSVar("AIPriorityModifier"));
+                }
+                // try to use it before it's gone
+                if (source.isInPlay() && source.hasSVar("EndOfTurnLeavePlay")) {
+                    p += 1;
                 }
                 if (ComputerUtilCard.isCardRemAIDeck(sa.getOriginalHost() != null ? sa.getOriginalHost() : source)) {
                     p -= 10;

@@ -66,8 +66,8 @@ public class CountersRemoveEffect extends SpellAbilityEffect {
 
     @Override
     public void resolve(SpellAbility sa) {
-        final Card card = sa.getHostCard();
-        final Game game = card.getGame();
+        final Card source = sa.getHostCard();
+        final Game game = source.getGame();
         final Player activator = sa.getActivatingPlayer();
 
         PlayerController pc = activator.getController();
@@ -76,7 +76,7 @@ public class CountersRemoveEffect extends SpellAbilityEffect {
 
         int cntToRemove = 0;
         if (!num.equals("All") && !num.equals("Any")) {
-            cntToRemove = AbilityUtils.calculateAmount(card, num, sa);
+            cntToRemove = AbilityUtils.calculateAmount(source, num, sa);
         }
 
         if (sa.hasParam("Optional")) {
@@ -101,47 +101,14 @@ public class CountersRemoveEffect extends SpellAbilityEffect {
         boolean rememberAmount = sa.hasParam("RememberAmount");
 
         int totalRemoved = 0;
+        CardCollectionView srcCards;
 
-        for (final Player tgtPlayer : getTargetPlayers(sa)) {
-            if (!tgtPlayer.isInGame()) {
-                continue;
-            }
-            // Removing energy
-            if (type.equals("All")) {
-                for (Map.Entry<CounterType, Integer> e : Lists.newArrayList(tgtPlayer.getCounters().entrySet())) {
-                    totalRemoved += tgtPlayer.subtractCounter(e.getKey(), e.getValue(), activator);
-                }
-            } else {
-                if (num.equals("All")) {
-                    cntToRemove = tgtPlayer.getCounters(counterType);
-                }
-                if (type.equals("Any")) {
-                    totalRemoved += removeAnyType(tgtPlayer, cntToRemove, sa);
-                } else {
-                    totalRemoved += tgtPlayer.subtractCounter(counterType, cntToRemove, activator);
-                }
-            }
-        }
-
-        CardCollectionView srcCards = null;
-
-        String typeforPrompt = counterType == null ? "" : counterType.getName();
-        String title = Localizer.getInstance().getMessage("lblChooseCardsToTakeTargetCounters", typeforPrompt);
-        title = title.replace("  ", " ");
-        if (sa.hasParam("ValidSource")) {
-            srcCards = game.getCardsIn(ZoneType.Battlefield);
-            srcCards = CardLists.getValidCards(srcCards, sa.getParam("ValidSource"), activator, card, sa);
-            if (num.equals("Any")) {
-                Map<String, Object> params = Maps.newHashMap();
-                params.put("CounterType", counterType);
-                srcCards = pc.chooseCardsForEffect(srcCards, sa, title, 0, srcCards.size(), true, params);
-            }
-        } else if (sa.hasParam("Choices") && counterType != null) {
+        if (sa.hasParam("Choices")) {
             ZoneType choiceZone = sa.hasParam("ChoiceZone") ? ZoneType.smartValueOf(sa.getParam("ChoiceZone"))
                     : ZoneType.Battlefield;
 
             CardCollection choices = CardLists.getValidCards(game.getCardsIn(choiceZone), sa.getParam("Choices"),
-                    activator, card, sa);
+                    activator, source, sa);
 
             int min = 1;
             int max = 1;
@@ -149,8 +116,41 @@ public class CountersRemoveEffect extends SpellAbilityEffect {
                 min = 0;
                 max = choices.size();
             }
-            srcCards = pc.chooseCardsForEffect(choices, sa, title, min, max, min == 0, null);
+            if (sa.hasParam("ChoiceNum")) {
+                min = max = AbilityUtils.calculateAmount(source, sa.getParam("ChoiceNum"), sa);
+            }
+            if (choices.size() < min) {
+                return;
+            }
+
+            String typeforPrompt = counterType == null ? "" : counterType.getName();
+            String title = Localizer.getInstance().getMessage("lblChooseCardsToTakeTargetCounters", typeforPrompt);
+            title = title.replace("  ", " ");
+            Map<String, Object> params = Maps.newHashMap();
+            params.put("CounterType", counterType);
+            srcCards = pc.chooseCardsForEffect(choices, sa, title, min, max, min == 0, params);
         } else {
+            for (final Player tgtPlayer : getTargetPlayers(sa)) {
+                if (!tgtPlayer.isInGame()) {
+                    continue;
+                }
+                // Removing energy
+                if (type.equals("All")) {
+                    for (Map.Entry<CounterType, Integer> e : Lists.newArrayList(tgtPlayer.getCounters().entrySet())) {
+                        totalRemoved += tgtPlayer.subtractCounter(e.getKey(), e.getValue(), activator);
+                    }
+                } else {
+                    if (num.equals("All")) {
+                        cntToRemove = tgtPlayer.getCounters(counterType);
+                    }
+                    if (type.equals("Any")) {
+                        totalRemoved += removeAnyType(tgtPlayer, cntToRemove, sa);
+                    } else {
+                        totalRemoved += tgtPlayer.subtractCounter(counterType, cntToRemove, activator);
+                    }
+                }
+            }
+
             srcCards = getTargetCards(sa);
         }
 
@@ -169,46 +169,51 @@ public class CountersRemoveEffect extends SpellAbilityEffect {
                     totalRemoved += gameCard.subtractCounter(e.getKey(), e.getValue(), activator);
                 }
                 game.updateLastStateForCard(gameCard);
-                continue;
-            } else if (num.equals("All") || num.equals("Any")) {
-                cntToRemove = gameCard.getCounters(counterType);
-            }
-
-            if (type.equals("Any")) {
+            } else if (type.equals("Any")) {
                 totalRemoved += removeAnyType(gameCard, cntToRemove, sa);
             } else {
-                if (!tgtCard.canRemoveCounters(counterType)) {
+                if (!gameCard.canRemoveCounters(counterType)) {
                     continue;
                 }
-                cntToRemove = Math.min(cntToRemove, gameCard.getCounters(counterType));
 
-                if (zone.is(ZoneType.Battlefield) || zone.is(ZoneType.Exile)) {
-                    if (sa.hasParam("UpTo") || num.equals("Any")) {
-                        Map<String, Object> params = Maps.newHashMap();
-                        params.put("Target", gameCard);
-                        params.put("CounterType", counterType);
-                        title = Localizer.getInstance().getMessage("lblSelectRemoveCountersNumberOfTarget", type);
-                        cntToRemove = pc.chooseNumber(sa, title, 0, cntToRemove, params);
+                int removeFromCard = cntToRemove;
+                if (num.equals("All") || num.equals("Any")) {
+                    removeFromCard = gameCard.getCounters(counterType);
+                } else {
+                    if (sa.hasParam("CounterNumShared")) {
+                        removeFromCard -= totalRemoved;
+                        if (removeFromCard < 1) {
+                            break;
+                        }
                     }
+                    removeFromCard = Math.min(removeFromCard, gameCard.getCounters(counterType));
                 }
-                if (cntToRemove > 0) {
-                    gameCard.subtractCounter(counterType, cntToRemove, activator);
+
+                if ((zone.is(ZoneType.Battlefield) || zone.is(ZoneType.Exile)) &&
+                        (sa.hasParam("UpTo") || num.equals("Any"))) {
+                    Map<String, Object> params = Maps.newHashMap();
+                    params.put("Target", gameCard);
+                    params.put("CounterType", counterType);
+                    removeFromCard = pc.chooseNumber(sa, Localizer.getInstance().getMessage("lblSelectRemoveCountersNumberOfTarget", type), 0, removeFromCard, params);
+                }
+                if (removeFromCard > 0) {
+                    gameCard.subtractCounter(counterType, removeFromCard, activator);
                     if (rememberRemoved) {
-                        for (int i = 0; i < cntToRemove; i++) {
+                        for (int i = 0; i < removeFromCard; i++) {
                             // TODO might need to be more specific
-                            card.addRemembered(Pair.of(counterType, i));
+                            source.addRemembered(Pair.of(counterType, i));
                         }
                     }
                     game.updateLastStateForCard(gameCard);
 
-                    totalRemoved += cntToRemove;
+                    totalRemoved += removeFromCard;
                 }
             }
         }
 
         if (totalRemoved > 0 && rememberAmount) {
             // TODO use SpellAbility Remember later
-            card.addRemembered(totalRemoved);
+            source.addRemembered(totalRemoved);
         }
     }
 
@@ -216,8 +221,8 @@ public class CountersRemoveEffect extends SpellAbilityEffect {
         boolean rememberRemoved = sa.hasParam("RememberRemoved");
         int removed = 0;
 
-        final Card card = sa.getHostCard();
-        final Game game = card.getGame();
+        final Card source = sa.getHostCard();
+        final Game game = source.getGame();
         final Player activator = sa.getActivatingPlayer();
         final PlayerController pc = activator.getController();
         final Map<CounterType, Integer> tgtCounters = Maps.newHashMap(entity.getCounters());
@@ -249,14 +254,13 @@ public class CountersRemoveEffect extends SpellAbilityEffect {
             if (chosenAmount > 0) {
                 removed += chosenAmount;
                 entity.subtractCounter(chosenType, chosenAmount, activator);
-                if (entity instanceof Card) {
-                    Card gameCard = (Card) entity;
+                if (entity instanceof Card gameCard) {
                     game.updateLastStateForCard(gameCard);
                 }
 
                 if (rememberRemoved) {
                     for (int i = 0; i < chosenAmount; i++) {
-                        card.addRemembered(Pair.of(chosenType, i));
+                        source.addRemembered(Pair.of(chosenType, i));
                     }
                 }
                 cntToRemove -= chosenAmount;

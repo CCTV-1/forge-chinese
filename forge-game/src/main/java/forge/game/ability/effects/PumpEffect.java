@@ -1,9 +1,7 @@
 package forge.game.ability.effects;
 
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.stream.Collectors;
 
 import forge.util.*;
@@ -22,6 +20,8 @@ import forge.game.card.Card;
 import forge.game.card.CardCollection;
 import forge.game.card.CardFactoryUtil;
 import forge.game.card.CardUtil;
+import forge.game.card.perpetual.PerpetualKeywords;
+import forge.game.card.perpetual.PerpetualPTBoost;
 import forge.game.event.GameEventCardStatsChanged;
 import forge.game.player.Player;
 import forge.game.player.PlayerCollection;
@@ -59,12 +59,7 @@ public class PumpEffect extends SpellAbilityEffect {
 
         if (a != 0 || d != 0) {
             if (perpetual) {
-                Map <String, Object> params = new HashMap<>();
-                params.put("Power", a);
-                params.put("Toughness", d);
-                params.put("Timestamp", timestamp);
-                params.put("Category", "PTBoost");
-                gameCard.addPerpetual(params);
+                gameCard.addPerpetual(new PerpetualPTBoost(timestamp, a, d));
             }
             gameCard.addPTBoost(a, d, timestamp, 0);
             redrawPT = true;
@@ -72,20 +67,15 @@ public class PumpEffect extends SpellAbilityEffect {
 
         if (!kws.isEmpty()) {
             if (perpetual) {
-                Map <String, Object> params = new HashMap<>();
-                params.put("AddKeywords", kws);
-                params.put("Timestamp", timestamp);
-                params.put("Category", "Keywords");
-                gameCard.addPerpetual(params);
+                gameCard.addPerpetual(new PerpetualKeywords(timestamp, kws, Lists.newArrayList(), false));
             }
             gameCard.addChangedCardKeywords(kws, Lists.newArrayList(), false, timestamp, null);
-            
         }
         if (!hiddenKws.isEmpty()) {
             gameCard.addHiddenExtrinsicKeywords(timestamp, 0, hiddenKws);
         }
         if (redrawPT) {
-            gameCard.updatePowerToughnessForView();
+            gameCard.updatePTforView();
         }
 
         if (sa.hasParam("CanBlockAny")) {
@@ -121,7 +111,7 @@ public class PumpEffect extends SpellAbilityEffect {
                         gameCard.removeHiddenExtrinsicKeywords(timestamp, 0);
                         gameCard.removeChangedCardKeywords(timestamp, 0);
                     }
-                    gameCard.updatePowerToughnessForView();
+                    gameCard.updatePTforView();
                     if (updateText) {
                         gameCard.updateAbilityTextForView();
                     }
@@ -304,10 +294,10 @@ public class PumpEffect extends SpellAbilityEffect {
         
         int a = 0;
         int d = 0;
-        if (sa.hasParam("NumAtt") && !sa.getParam("NumAtt").equals("Double")) {
+        if (sa.hasParam("NumAtt") && !sa.getParam("NumAtt").equals("Double") && !sa.getParam("NumAtt").equals("Triple")) {
             a = AbilityUtils.calculateAmount(host, sa.getParam("NumAtt"), sa, true);
         }
-        if (sa.hasParam("NumDef") && !sa.getParam("NumDef").equals("Double")) {
+        if (sa.hasParam("NumDef") && !sa.getParam("NumDef").equals("Double") && !sa.getParam("NumDef").equals("Triple")) {
             d = AbilityUtils.calculateAmount(host, sa.getParam("NumDef"), sa, true);
         }
 
@@ -488,6 +478,14 @@ public class PumpEffect extends SpellAbilityEffect {
             if (sa.hasParam("NumDef") && sa.getParam("NumDef").equals("Double")) {
                 d = tgtC.getNetToughness();
             }
+
+            if (sa.hasParam("NumAtt") && sa.getParam("NumAtt").equals("Triple")) {
+                a = tgtC.getNetPower()*2;
+            }
+            if (sa.hasParam("NumDef") && sa.getParam("NumDef").equals("Triple")) {
+                d = tgtC.getNetToughness()*2;
+            }
+
 
             applyPump(sa, tgtC, a, d, affectedKeywords, timestamp);
         }

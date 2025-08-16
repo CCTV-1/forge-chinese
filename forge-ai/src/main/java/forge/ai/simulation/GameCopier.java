@@ -81,6 +81,7 @@ public class GameCopier {
         GameRules currentRules = origGame.getRules();
         Match newMatch = new Match(currentRules, newPlayers, origGame.getView().getTitle());
         Game newGame = new Game(newPlayers, currentRules, newMatch);
+        newGame.dangerouslySetTimestamp(origGame.getTimestamp());
 
         for (int i = 0; i < origGame.getPlayers().size(); i++) {
             Player origPlayer = origGame.getPlayers().get(i);
@@ -94,8 +95,8 @@ public class GameCopier {
             newPlayer.setDamageReceivedThisTurn(origPlayer.getDamageReceivedThisTurn());
             newPlayer.setLandsPlayedThisTurn(origPlayer.getLandsPlayedThisTurn());
             newPlayer.setCounters(Maps.newHashMap(origPlayer.getCounters()));
-            newPlayer.setBlessing(origPlayer.hasBlessing());
-            newPlayer.setRevolt(origPlayer.hasRevolt());
+            newPlayer.setSpeed(origPlayer.getSpeed());
+            newPlayer.setBlessing(origPlayer.hasBlessing(), null);
             newPlayer.setDescended(origPlayer.getDescended());
             newPlayer.setLibrarySearched(origPlayer.getLibrarySearched());
             newPlayer.setSpellsCastLastTurn(origPlayer.getSpellsCastLastTurn());
@@ -104,6 +105,7 @@ public class GameCopier {
             }
             newPlayer.setMaxHandSize(origPlayer.getMaxHandSize());
             newPlayer.setUnlimitedHandSize(origPlayer.isUnlimitedHandSize());
+            newPlayer.setCrankCounter(origPlayer.getCrankCounter());
             // TODO creatureAttackedThisTurn
             for (Mana m : origPlayer.getManaPool()) {
                 newPlayer.getManaPool().addMana(m, false);
@@ -370,10 +372,10 @@ public class GameCopier {
             if (c.isFaceDown()) {
                 newCard.turnFaceDown(true);
                 if (c.isManifested()) {
-                    newCard.setManifested(true);
+                    newCard.setManifested(c.getManifestedSA());
                 }
                 if (c.isCloaked()) {
-                    newCard.setCloaked(true);
+                    newCard.setCloaked(c.getCloakedSA());
                 }
             }
             if (c.isMonstrous()) {
@@ -429,6 +431,9 @@ public class GameCopier {
             if (c.hasNamedCard()) {
                 newCard.setNamedCards(Lists.newArrayList(c.getNamedCards()));
             }
+
+            newCard.setSprocket(c.getSprocket());
+
             newCard.setSVars(c.getSVars());
             newCard.copyChangedSVarsFrom(c);
         }

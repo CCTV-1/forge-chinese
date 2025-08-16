@@ -122,23 +122,10 @@ public class ForgeScript {
                 }
             }
             return found;
-        } else if (property.equals("hasActivatedAbilityWithTapCost")) {
+        } else if (property.startsWith("hasAbility")) {
+            String valid = property.substring(11);
             for (final SpellAbility sa : cardState.getSpellAbilities()) {
-                if (sa.isActivatedAbility() && sa.getPayCosts().hasTapCost()) {
-                    return true;
-                }
-            }
-            return false;
-        } else if (property.equals("hasActivatedAbility")) {
-            for (final SpellAbility sa : cardState.getSpellAbilities()) {
-                if (sa.isActivatedAbility()) {
-                    return true;
-                }
-            }
-            return false;
-        } else if (property.equals("hasOtherActivatedAbility")) {
-            for (final SpellAbility sa : cardState.getSpellAbilities()) {
-                if (sa.isActivatedAbility() && !sa.equals(spellAbility)) {
+                if (sa.isValid(valid, sourceController, source, spellAbility)) {
                     return true;
                 }
             }
@@ -204,7 +191,11 @@ public class ForgeScript {
             return sa.isCraft();
         } else if (property.equals("Crew")) {
             return sa.isCrew();
-        } else if (property.equals("Cycling")) {
+        } else if (property.equals("Saddle")) {
+            return sa.isKeyword(Keyword.SADDLE);
+        } else if (property.equals("Station")) {
+            return sa.isKeyword(Keyword.STATION);
+        }else if (property.equals("Cycling")) {
             return sa.isCycling();
         } else if (property.equals("Dash")) {
             return sa.isDash();
@@ -216,6 +207,8 @@ public class ForgeScript {
             return sa.isEternalize();
         } else if (property.equals("Flashback")) {
             return sa.isFlashback();
+        } else if (property.equals("Harmonize")) {
+            return sa.isHarmonize();
         } else if (property.equals("Jumpstart")) {
             return sa.isJumpstart();
         } else if (property.equals("Kicked")) {
@@ -234,12 +227,16 @@ public class ForgeScript {
             return sa.isTurnFaceUp();
         } else if (property.equals("isCastFaceDown")) {
             return sa.isCastFaceDown();
+        } else if (property.equals("Unearth")) {
+            return sa.isKeyword(Keyword.UNEARTH);
         } else if (property.equals("Modular")) {
             return sa.isKeyword(Keyword.MODULAR);
         } else if (property.equals("Equip")) {
             return sa.isEquip();
         } else if (property.equals("Boast")) {
             return sa.isBoast();
+        } else if (property.equals("Exhaust")) {
+            return sa.isExhaust();
         } else if (property.equals("Mutate")) {
             return sa.isMutate();
         } else if (property.equals("Ninjutsu")) {
@@ -260,6 +257,8 @@ public class ForgeScript {
             return sa.isKeyword(Keyword.DAYBOUND);
         } else if (property.equals("Nightbound")) {
             return sa.isKeyword(Keyword.NIGHTBOUND);
+        } else if (property.equals("Warp")) {
+            return sa.isWarp();
         } else if (property.equals("Ward")) {
             return sa.isKeyword(Keyword.WARD);
         } else if (property.equals("CumulativeUpkeep")) {
