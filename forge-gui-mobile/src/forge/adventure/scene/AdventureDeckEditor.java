@@ -6,8 +6,10 @@ import com.badlogic.gdx.utils.Align;
 import forge.Forge;
 import forge.Graphics;
 import forge.adventure.data.AdventureEventData;
+import forge.adventure.data.ItemData;
 import forge.adventure.player.AdventurePlayer;
 import forge.adventure.util.AdventureEventController;
+import forge.adventure.util.AdventureModes;
 import forge.adventure.util.Config;
 import forge.adventure.util.Current;
 import forge.assets.FImage;
@@ -26,42 +28,67 @@ import forge.item.PaperCard;
 import forge.itemmanager.*;
 import forge.itemmanager.filters.CardColorFilter;
 import forge.itemmanager.filters.CardTypeFilter;
-import forge.localinstance.properties.ForgePreferences;
-import forge.menu.FCheckBoxMenuItem;
 import forge.menu.FDropDownMenu;
 import forge.menu.FMenuItem;
 import forge.menu.FPopupMenu;
 import forge.model.FModel;
 import forge.toolbox.*;
-import forge.util.Callback;
 import forge.util.ItemPool;
 import forge.util.Localizer;
 import forge.util.Utils;
 
 import java.util.*;
+import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Predicate;
 
 public class AdventureDeckEditor extends FDeckEditor {
     protected static class AdventureEditorConfig extends DeckEditorConfig {
-        @Override public GameType getGameType() { return GameType.Adventure; }
-        @Override public DeckFormat getDeckFormat() { return DeckFormat.Adventure; }
-        @Override protected IDeckController getController() { return ADVENTURE_DECK_CONTROLLER; }
-        @Override public boolean usePlayerInventory() { return true; }
-        @Override public boolean allowsCardReplacement() { return true; }
-
         @Override
-        protected DeckEditorPage[] getInitialPages() {
-            return new DeckEditorPage[]{
-                    new CollectionCatalogPage(),
-                    new AdventureDeckSectionPage(DeckSection.Main, ItemManagerConfig.ADVENTURE_EDITOR_POOL),
-                    new AdventureDeckSectionPage(DeckSection.Sideboard, ItemManagerConfig.ADVENTURE_SIDEBOARD),
-                    new CollectionAutoSellPage()
-            };
+        public GameType getGameType() {
+            return GameType.Adventure;
         }
 
         @Override
-        public ItemPool<PaperCard> getCardPool(boolean wantUnique) {
-            return Current.player().getCards();
+        public DeckFormat getDeckFormat() {
+            return AdventurePlayer.current().getAdventureMode() == AdventureModes.Commander ? DeckFormat.Commander : DeckFormat.Adventure;
+        }
+
+        @Override
+        protected IDeckController getController() {
+            return ADVENTURE_DECK_CONTROLLER;
+        }
+
+        @Override
+        public boolean usePlayerInventory() {
+            return true;
+        }
+
+        @Override
+        protected DeckEditorPage[] getInitialPages() {
+            if (AdventurePlayer.current().getAdventureMode() == AdventureModes.Commander)
+                return new DeckEditorPage[]{
+                        new CollectionCatalogPage(),
+                        new AdventureDeckSectionPage(DeckSection.Commander, ItemManagerConfig.ADVENTURE_EDITOR_POOL),
+                        new AdventureDeckSectionPage(DeckSection.Main, ItemManagerConfig.ADVENTURE_EDITOR_POOL),
+                        new AdventureDeckSectionPage(DeckSection.Sideboard, ItemManagerConfig.ADVENTURE_SIDEBOARD),
+                        new CollectionAutoSellPage()
+                };
+            else {
+                return new DeckEditorPage[]{
+                        new CollectionCatalogPage(),
+                        new AdventureDeckSectionPage(DeckSection.Main, ItemManagerConfig.ADVENTURE_EDITOR_POOL),
+                        new AdventureDeckSectionPage(DeckSection.Sideboard, ItemManagerConfig.ADVENTURE_SIDEBOARD),
+                        new CollectionAutoSellPage()
+                };
+            }
+        }
+
+        @Override
+        public ItemPool<PaperCard> getCardPool() {
+            ItemPool<PaperCard> pool = new ItemPool<>(PaperCard.class);
+            pool.addAll(Current.player().getCards());
+            return pool;
         }
 
         @Override
@@ -78,7 +105,10 @@ public class AdventureDeckEditor extends FDeckEditor {
             }
 
             String sketchbookPrefix = "landscape sketchbook - ";
-            for (String itemName : AdventurePlayer.current().getItems()) {
+            for (ItemData itemData : AdventurePlayer.current().getItems()) {
+                if (itemData == null)
+                    continue;
+                String itemName = itemData.name;
                 if (!itemName.toLowerCase().startsWith(sketchbookPrefix)) {
                     continue;
                 }
@@ -96,6 +126,15 @@ public class AdventureDeckEditor extends FDeckEditor {
         }
     }
 
+    @Override
+    public boolean isCommanderEditor() {
+        if (isLimitedEditor())
+            return false;
+        if (AdventurePlayer.current().getAdventureMode() == AdventureModes.Commander)
+            return true;
+        return super.isCommanderEditor();
+    }
+
     protected static class ShopConfig extends AdventureEditorConfig {
         @Override
         protected DeckEditorPage[] getInitialPages() {
@@ -108,18 +147,34 @@ public class AdventureDeckEditor extends FDeckEditor {
 
     protected static class DeckPreviewConfig extends AdventureEditorConfig {
         private final Deck deckToPreview;
+
         public DeckPreviewConfig(Deck deckToPreview) {
             this.deckToPreview = deckToPreview;
         }
 
-        @Override public boolean usePlayerInventory() { return false; }
-        @Override public boolean isLimited() { return true; }
-        @Override public ItemPool<PaperCard> getCardPool(boolean wantUnique) { return deckToPreview.getAllCardsInASinglePool(true, true); }
-        @Override public boolean allowsCardReplacement() { return false; }
+        @Override
+        public boolean usePlayerInventory() {
+            return false;
+        }
+
+        @Override
+        public boolean isLimited() {
+            return true;
+        }
+
+        @Override
+        public ItemPool<PaperCard> getCardPool() {
+            return deckToPreview.getAllCardsInASinglePool(true, true);
+        }
+
+        @Override
+        public boolean allowsCardReplacement() {
+            return false;
+        }
 
         @Override
         protected DeckEditorPage[] getInitialPages() {
-            return new DeckEditorPage[] {new ContentPreviewPage(deckToPreview)};
+            return new DeckEditorPage[]{new ContentPreviewPage(deckToPreview)};
         }
     }
 
@@ -132,19 +187,39 @@ public class AdventureDeckEditor extends FDeckEditor {
             this.controller = new AdventureEventDeckController(event);
         }
 
-        @Override public GameType getGameType() { return GameType.AdventureEvent; }
-        @Override public DeckFormat getDeckFormat() { return DeckFormat.Limited; }
-        @Override public boolean isLimited() { return true; }
-        @Override public boolean isDraft() { return event.getDraft() != null; }
-        @Override protected IDeckController getController() { return this.controller; }
+        @Override
+        public GameType getGameType() {
+            return GameType.AdventureEvent;
+        }
+
+        @Override
+        public DeckFormat getDeckFormat() {
+            return DeckFormat.Limited;
+        }
+
+        @Override
+        public boolean isLimited() {
+            return true;
+        }
+
+        @Override
+        public boolean isDraft() {
+            return event.getDraft() != null;
+        }
+
+        @Override
+        protected IDeckController getController() {
+            return this.controller;
+        }
 
         @Override
         public List<CardEdition> getBasicLandSets(Deck currentDeck) {
-            if(event.cardBlock != null) {
-                if(event.cardBlock.getLandSet() != null)
+            if (event.cardBlock != null) {
+                if (event.cardBlock.getLandSet() != null)
                     return List.of(event.cardBlock.getLandSet());
-                List<CardEdition> eventSets = event.cardBlock.getSets();
-                if(!eventSets.isEmpty())
+                List<CardEdition> eventSets = new ArrayList<>(event.cardBlock.getSets());
+                eventSets.removeIf(Predicate.not(CardEdition::hasBasicLands));
+                if (!eventSets.isEmpty())
                     return eventSets;
             }
             return List.of(DeckProxy.getDefaultLandSet(event.registeredDeck));
@@ -167,9 +242,9 @@ public class AdventureDeckEditor extends FDeckEditor {
                     case Entered:
                         if (event.getDraft() != null)
                             return new DeckEditorPage[]{
-                                new DraftPackPage(new AdventureCardManager()),
-                                new AdventureDeckSectionPage(DeckSection.Main, ItemManagerConfig.DRAFT_POOL),
-                                new AdventureDeckSectionPage(DeckSection.Sideboard, ItemManagerConfig.SIDEBOARD)
+                                    new DraftPackPage(new AdventureCardManager()),
+                                    new AdventureDeckSectionPage(DeckSection.Main, ItemManagerConfig.DRAFT_POOL),
+                                    new AdventureDeckSectionPage(DeckSection.Sideboard, ItemManagerConfig.SIDEBOARD)
                             };
                     default:
                         return new DeckEditorPage[]{
@@ -239,7 +314,7 @@ public class AdventureDeckEditor extends FDeckEditor {
             Localizer localizer = Forge.getLocalizer();
             String label = localizer.getMessage("lblSellFor") + " " + Current.player().cardSellPrice(card);
             int sellable = cardManager.getItemCount(card);
-            if(sellable <= 0)
+            if (sellable <= 0)
                 return;
             String prompt = card + " - " + label + " " + localizer.getMessage("lblHowMany");
 
@@ -247,7 +322,7 @@ public class AdventureDeckEditor extends FDeckEditor {
                 int sold = Current.player().sellCard(card, result);
                 removeCard(card, sold);
             }));
-            if(cardIsFavorite(card))
+            if (cardIsFavorite(card))
                 sellItem.setTextColor(255, 0, 0);
             menu.addItem(sellItem);
         }
@@ -267,7 +342,14 @@ public class AdventureDeckEditor extends FDeckEditor {
 
         @Override
         public void refresh() {
-            cardManager.setPool(Current.player().getSellableCards());
+            cardManager.setPool(getCardPool());
+        }
+
+        @Override
+        public ItemPool<PaperCard> getCardPool() {
+            ItemPool<PaperCard> pool = Current.player().getSellableCards();
+            pool.removeAll(Current.player().autoSellCards);
+            return pool;
         }
 
         public void sellAllByFilter() {
@@ -282,16 +364,13 @@ public class AdventureDeckEditor extends FDeckEditor {
                 value += Current.player().cardSellPrice(entry.getKey()) * entry.getValue();
             }
 
-            if(toSell.isEmpty())
+            if (toSell.isEmpty())
                 return;
 
-            FOptionPane.showConfirmDialog(Forge.getLocalizer().getMessage("lblSellAllConfirm", toSell.countAll(), value), Forge.getLocalizer().getMessage("lblSellCurrentFilters"), Forge.getLocalizer().getMessage("lblSell"), Forge.getLocalizer().getMessage("lblCancel"), false, new Callback<>() {
-                @Override
-                public void run(Boolean result) {
-                    if (result) {
-                        Current.player().doBulkSell(toSell);
-                        refresh();
-                    }
+            FOptionPane.showConfirmDialog(Forge.getLocalizer().getMessage("lblSellAllConfirm", toSell.countAll(), value), Forge.getLocalizer().getMessage("lblSellCurrentFilters"), Forge.getLocalizer().getMessage("lblSell"), Forge.getLocalizer().getMessage("lblCancel"), false, result -> {
+                if (result) {
+                    Current.player().doBulkSell(toSell);
+                    refresh();
                 }
             });
         }
@@ -299,13 +378,21 @@ public class AdventureDeckEditor extends FDeckEditor {
         @Override
         public void setCardFavorited(PaperCard card, boolean isFavorite) {
             AdventurePlayer player = Current.player();
-            if(isFavorite)
+            if (isFavorite)
                 player.favoriteCards.add(card);
             else
                 player.favoriteCards.remove(card);
         }
-        @Override protected boolean cardIsFavorite(PaperCard card) { return Current.player().favoriteCards.contains(card); }
-        @Override protected boolean allowFavoriteCards() { return true; }
+
+        @Override
+        protected boolean cardIsFavorite(PaperCard card) {
+            return Current.player().favoriteCards.contains(card);
+        }
+
+        @Override
+        protected boolean allowFavoriteCards() {
+            return true;
+        }
     }
 
     private static class CollectionCatalogPage extends CatalogPage {
@@ -317,8 +404,14 @@ public class AdventureDeckEditor extends FDeckEditor {
         protected void initialize() {
             super.initialize();
             cardManager.setBtnAdvancedSearchOptions(true);
-            cardManager.setCatalogDisplay(true);
             scheduleRefresh();
+        }
+
+        @Override
+        public ItemPool<PaperCard> getCardPool() {
+            ItemPool<PaperCard> pool = super.getCardPool();
+            pool.removeAll(Current.player().autoSellCards);
+            return pool;
         }
 
         @Override
@@ -338,9 +431,18 @@ public class AdventureDeckEditor extends FDeckEditor {
             int autoSellCount = Current.player().autoSellCards.count(card); //Number currently in auto-sell.
             int canMoveToAutoSell = safeToSellCount - autoSellCount; //Number that can be moved to auto-sell from here.
 
+            if (card.getRules().isUnsupported()) {
+                menu.clearItems();
+                FMenuItem removeItem = new FMenuItem(localizer.getMessage("lblRemoveUnsupportedCard"), FSkinImage.HDDELETE, e ->
+                        removeCard(card, safeToSellCount));
+                menu.addItem(removeItem);
+                return;
+            }
+
             if (copiesUsedInDecks > 0) {
                 String text = localizer.getMessage("lblCopiesInUse", copiesUsedInDecks);
-                FMenuItem usedHint = new FMenuItem(text, FSkinImage.HDLIBRARY, n -> {});
+                FMenuItem usedHint = new FMenuItem(text, FSkinImage.HDLIBRARY, n -> {
+                });
                 usedHint.setEnabled(false);
                 menu.addItem(usedHint);
             }
@@ -377,13 +479,21 @@ public class AdventureDeckEditor extends FDeckEditor {
         @Override
         public void setCardFavorited(PaperCard card, boolean isFavorite) {
             AdventurePlayer player = Current.player();
-            if(isFavorite)
+            if (isFavorite)
                 player.favoriteCards.add(card);
             else
                 player.favoriteCards.remove(card);
         }
-        @Override protected boolean cardIsFavorite(PaperCard card) { return Current.player().favoriteCards.contains(card); }
-        @Override protected boolean allowFavoriteCards() { return true; }
+
+        @Override
+        protected boolean cardIsFavorite(PaperCard card) {
+            return Current.player().favoriteCards.contains(card);
+        }
+
+        @Override
+        protected boolean allowFavoriteCards() {
+            return true;
+        }
 
         @Override
         public void buildDeckMenu(FPopupMenu menu) {
@@ -404,15 +514,12 @@ public class AdventureDeckEditor extends FDeckEditor {
                     continue;
                 toMove.add(entry.getKey(), entry.getValue());
             }
-            if(toMove.isEmpty())
+            if (toMove.isEmpty())
                 return;
 
-            FOptionPane.showConfirmDialog(Forge.getLocalizer().getMessage("lblAutoSellCurrentFiltersConfirm", toMove.countAll()), Forge.getLocalizer().getMessage("lblAutoSellCurrentFilters"), Forge.getLocalizer().getMessage("lblAutoSell"), Forge.getLocalizer().getMessage("lblCancel"), false, new Callback<>() {
-                @Override
-                public void run(Boolean result) {
-                    if (result) {
-                        moveCards(toMove, autoSellPage);
-                    }
+            FOptionPane.showConfirmDialog(Forge.getLocalizer().getMessage("lblAutoSellCurrentFiltersConfirm", toMove.countAll()), Forge.getLocalizer().getMessage("lblAutoSellCurrentFilters"), Forge.getLocalizer().getMessage("lblAutoSell"), Forge.getLocalizer().getMessage("lblCancel"), false, result -> {
+                if (result) {
+                    moveCards(toMove, autoSellPage);
                 }
             });
         }
@@ -435,7 +542,6 @@ public class AdventureDeckEditor extends FDeckEditor {
         protected void initialize() {
             super.initialize();
             cardManager.setBtnAdvancedSearchOptions(true);
-            cardManager.setCatalogDisplay(true);
             cardManager.setPool(getCardPool(), false); //Need to update this early for the caption.
             this.updateCaption();
         }
@@ -447,6 +553,12 @@ public class AdventureDeckEditor extends FDeckEditor {
             return Current.player().getAutoSellCards();
         }
 
+        @Override
+        public void refresh() {
+            super.refresh();
+            //Used when executing an auto-sell.
+            this.updateCaption();
+        }
 
         protected boolean isShop() {
             return parentScreen.getEditorConfig() instanceof ShopConfig;
@@ -457,20 +569,20 @@ public class AdventureDeckEditor extends FDeckEditor {
             super.buildMenu(menu, card);
             Localizer localizer = Forge.getLocalizer();
             AdventurePlayer player = Current.player();
-            if(isShop()) {
+            if (isShop()) {
                 String label = localizer.getMessage("lblSellFor") + " " + player.cardSellPrice(card);
                 int sellable = cardManager.getItemCount(card);
-                if(sellable <= 0)
+                if (sellable <= 0)
                     return;
                 String prompt = card + " - " + label + " " + localizer.getMessage("lblHowMany");
 
                 menu.addItem(new FMenuItem(label, SIDEBOARD_ICON, new MoveQuantityPrompt(prompt, sellable, result -> {
-                        int sold = player.sellCard(card, result);
-                        removeCard(card, sold);
-                    })
+                    int sold = player.sellCard(card, result);
+                    removeCard(card, sold);
+                })
                 ));
             }
-            if(parentScreen instanceof AdventureDeckEditor adventureEditor && adventureEditor.getCatalogPage() != null) {
+            if (parentScreen instanceof AdventureDeckEditor adventureEditor && adventureEditor.getCatalogPage() != null) {
                 CatalogPage catalogPage = adventureEditor.getCatalogPage();
                 int autoSellCount = cardManager.getItemCount(card);
                 int amountInCollection = player.getCards().count(card);
@@ -478,9 +590,7 @@ public class AdventureDeckEditor extends FDeckEditor {
 
                 String action = localizer.getMessage("lblFromAutoSell", autoSellCount, safeToSellCount);
                 String prompt = String.format("%s - %s %s", card, action, localizer.getMessage("lblHowMany"));
-                FMenuItem moveToCatalog = new FMenuItem(action, CATALOG_ICON, new MoveQuantityPrompt(prompt, autoSellCount, amount -> {
-                    moveCard(card, catalogPage, amount);
-                }));
+                FMenuItem moveToCatalog = new FMenuItem(action, CATALOG_ICON, new MoveQuantityPrompt(prompt, autoSellCount, amount -> moveCard(card, catalogPage, amount)));
                 menu.addItem(moveToCatalog);
             }
 
@@ -488,7 +598,7 @@ public class AdventureDeckEditor extends FDeckEditor {
 
         @Override
         protected void onCardActivated(PaperCard card) {
-            if(isShop()) {
+            if (isShop()) {
                 Current.player().sellCard(card, 1);
                 removeCard(card, 1);
             }
@@ -498,7 +608,7 @@ public class AdventureDeckEditor extends FDeckEditor {
 
     public AdventureEventData getCurrentEvent() {
         IDeckController controller = getDeckController();
-        if(!(controller instanceof AdventureEventDeckController eventController))
+        if (!(controller instanceof AdventureEventDeckController eventController))
             return null;
         return eventController.currentEvent;
     }
@@ -506,7 +616,7 @@ public class AdventureDeckEditor extends FDeckEditor {
     @Override
     public BoosterDraft getDraft() {
         AdventureEventData currentEvent = getCurrentEvent();
-        if(currentEvent == null)
+        if (currentEvent == null)
             return null;
         return currentEvent.getDraft();
     }
@@ -514,7 +624,7 @@ public class AdventureDeckEditor extends FDeckEditor {
     @Override
     public boolean isDrafting() {
         AdventureEventData currentEvent = getCurrentEvent();
-        if(currentEvent == null)
+        if (currentEvent == null)
             return false;
         return currentEvent.draft != null && !currentEvent.isDraftComplete;
     }
@@ -529,7 +639,7 @@ public class AdventureDeckEditor extends FDeckEditor {
     public void completeDraft() {
         super.completeDraft();
         AdventureEventData currentEvent = getCurrentEvent();
-        if(currentEvent == null)
+        if (currentEvent == null)
             return;
         currentEvent.isDraftComplete = true;
         Deck[] opponentDecks = currentEvent.getDraft().getComputerDecks();
@@ -537,7 +647,7 @@ public class AdventureDeckEditor extends FDeckEditor {
             currentEvent.participants[i].setDeck(opponentDecks[i]);
         }
         currentEvent.draftedDeck = (Deck) currentEvent.registeredDeck.copyTo("Draft Deck");
-        if (allowsAddBasic()) {
+        if (allowAddBasic()) {
             showAddBasicLandsDialog();
             //Might be annoying if you haven't pruned your deck yet, but best to remind player that
             //this probably needs to be done since it's there since it's not normally part of Adventure
@@ -603,9 +713,9 @@ public class AdventureDeckEditor extends FDeckEditor {
     private static final FImage AUTO_SELL_ICON = FSkinImage.HDEXILE; //to-maybe-do: Custom adventure icon for this? Adventure should really just have its own skin.
 
     public static FImage iconFromDeckSection(DeckSection deckSection) {
-        if(deckSection == DeckSection.Main)
+        if (deckSection == DeckSection.Main)
             return MAIN_DECK_ICON;
-        if(deckSection == DeckSection.Sideboard)
+        if (deckSection == DeckSection.Sideboard)
             return FDeckEditor.SIDEBOARD_ICON;
         return FDeckEditor.iconFromDeckSection(deckSection);
     }
@@ -635,15 +745,26 @@ public class AdventureDeckEditor extends FDeckEditor {
 //            if (currentEvent.registeredDeck!=null && !currentEvent.registeredDeck.isEmpty()){
 //                //Use this deck instead of selected deck
 //            }
+
+        for (TabPage<FDeckEditor> page : tabPages) {
+            if (page instanceof CollectionCatalogPage) {
+                if (!Current.player().getUnsupportedCards().isEmpty())
+                    GuiChoose.getChoices(Forge.getLocalizer().getMessage("lblRemoveAllUnsupportedCards"),
+                            -1, -1, Current.player().getUnsupportedCards(), result -> Current.player().getUnsupportedCards().clear());
+                break;
+            }
+        }
     }
 
     public void refresh() {
         FThreads.invokeInBackgroundThread(() -> {
             for (TabPage<FDeckEditor> page : tabPages) {
-                if (page instanceof CatalogPage)
-                    ((CatalogPage) page).scheduleRefresh();
-                else if (page instanceof CardManagerPage)
-                    ((CardManagerPage) page).refresh();
+                if (page instanceof CollectionAutoSellPage p)
+                    p.refresh();
+                else if (page instanceof CatalogPage p)
+                    p.scheduleRefresh();
+                else if (page instanceof CardManagerPage p)
+                    p.refresh();
             }
         });
     }
@@ -656,7 +777,7 @@ public class AdventureDeckEditor extends FDeckEditor {
     public AdventureDeckEditor(boolean createAsShop) {
         super(createAsShop ? new ShopConfig() : new AdventureEditorConfig(),
                 createAsShop ? null : Current.player().getSelectedDeck());
-        if(createAsShop)
+        if (createAsShop)
             setHeaderText(Forge.getLocalizer().getMessage("lblSell"));
     }
 
@@ -664,7 +785,7 @@ public class AdventureDeckEditor extends FDeckEditor {
         super(new AdventureEventEditorConfig(event), event.registeredDeck);
         currentEvent = event;
 
-        if(event.getDraft() != null && event.getDraft().shouldShowDraftLog()) {
+        if (event.getDraft() != null && event.getDraft().shouldShowDraftLog()) {
             this.draftLog = new FDraftLog();
             event.getDraft().setLogEntry(this.draftLog);
             deckHeader.initDraftLog(this.draftLog, this);
@@ -682,65 +803,58 @@ public class AdventureDeckEditor extends FDeckEditor {
     }
 
     @Override
-    protected FPopupMenu createMoreOptionsMenu() {
-        return new FPopupMenu() {
-            @Override
-            protected void buildMenu() {
-                Localizer localizer = Forge.getLocalizer();
-                addItem(new FMenuItem(localizer.getMessage("btnCopyToClipboard"), Forge.hdbuttons ? FSkinImage.HDEXPORT : FSkinImage.BLANK, e1 -> FDeckViewer.copyDeckToClipboard(getDeck())));
-                if (allowsAddBasic()) {
-                    FMenuItem addBasic = new FMenuItem(localizer.getMessage("lblAddBasicLands"), FSkinImage.LANDLOGO, e1 -> showAddBasicLandsDialog());
-                    addItem(addBasic);
-                }
-                if(FModel.getPreferences().getPrefBoolean(ForgePreferences.FPref.DEV_MODE_ENABLED))
-                    addItem(new FCheckBoxMenuItem(localizer.getMessage("cbEnforceDeckLegality"), shouldEnforceConformity(), e -> toggleConformity()));
-                ((DeckEditorPage) getSelectedPage()).buildDeckMenu(this);
+    protected void addChosenBasicLands(CardPool landsToAdd) {
+        if (isLimitedEditor())
+            super.addChosenBasicLands(landsToAdd);
+
+        //Take the basic lands from the player's collection if they have them. If they need more, create unsellable copies.
+        CatalogPage catalog = getCatalogPage();
+        if (catalog != null) { // TODO find out why this is null on some devices since it shouldn't be null
+            CardPool requiredNewLands = new CardPool();
+            CardPool landsToMove = new CardPool();
+            ItemPool<PaperCard> availablePool = catalog.getCardPool();
+            for (Map.Entry<PaperCard, Integer> entry : landsToAdd) {
+                int needed = entry.getValue();
+                PaperCard card = entry.getKey();
+                int moveableSellable = Math.min(availablePool.count(card), needed);
+                landsToMove.add(card, moveableSellable);
+                needed -= moveableSellable;
+                if (needed <= 0)
+                    continue;
+                PaperCard unsellable = card.getNoSellVersion();
+                //It'd probably be better to do some kind of fuzzy search that matches prints but ignores flags.
+                //But for now, unsellable is the only one that should matter here.
+                int moveableUnsellable = Math.min(availablePool.count(unsellable), needed);
+                landsToMove.add(unsellable, needed); //We'll acquire the rest later.
+                if (needed > moveableUnsellable)
+                    requiredNewLands.add(unsellable, needed - moveableUnsellable);
             }
-        };
+            if (!requiredNewLands.isEmpty())
+                Current.player().addCards(requiredNewLands);
+            catalog.refresh();
+            catalog.moveCards(landsToMove, getMainDeckPage());
+        }
     }
 
     @Override
-    protected void addChosenBasicLands(CardPool landsToAdd) {
-        if(isLimitedEditor())
-            super.addChosenBasicLands(landsToAdd);
-        //Take the basic lands from the player's collection if they have them. If they need more, create unsellable copies.
-        CardPool requiredNewLands = new CardPool();
-        CardPool landsToMove = new CardPool();
-        CatalogPage catalog = getCatalogPage();
-        ItemPool<PaperCard> availablePool = catalog.getCardPool();
-        for(Map.Entry<PaperCard, Integer> entry : landsToAdd) {
-            int needed = entry.getValue();
-            PaperCard card = entry.getKey();
-            int moveableSellable = Math.min(availablePool.count(card), needed);
-            landsToMove.add(card, moveableSellable);
-            needed -= moveableSellable;
-            if(needed <= 0)
-                continue;
-            PaperCard unsellable = card.getNoSellVersion();
-            //It'd probably be better to do some kind of fuzzy search that matches prints but ignores flags.
-            //But for now, unsellable is the only one that should matter here.
-            int moveableUnsellable = Math.min(availablePool.count(unsellable), needed);
-            landsToMove.add(unsellable, needed); //We'll acquire the rest later.
-            if(needed > moveableUnsellable)
-                requiredNewLands.add(unsellable, needed - moveableUnsellable);
-        }
-        if(!requiredNewLands.isEmpty())
-            Current.player().addCards(requiredNewLands);
-        catalog.refresh();
-        catalog.moveCards(landsToMove, getMainDeckPage());
+    protected PaperCard supplyPrintForImporter(PaperCard missingCard) {
+        PaperCard out = super.supplyPrintForImporter(missingCard);
+        return out == null ? null : out.getNoSellVersion();
     }
 
     @Override
     protected void cacheTabPages() {
         super.cacheTabPages();
-        for(TabPage<FDeckEditor> page : tabPages) {
-            if(page instanceof CollectionAutoSellPage)
+        for (TabPage<FDeckEditor> page : tabPages) {
+            if (page instanceof CollectionAutoSellPage)
                 this.autoSellPage = (CollectionAutoSellPage) page;
         }
     }
 
     @Override
-    protected boolean allowsAddBasic() {
+    protected boolean allowAddBasic() {
+        if (getEditorConfig() instanceof DeckPreviewConfig)
+            return false;
         AdventureEventData currentEvent = getCurrentEvent();
         if (currentEvent == null)
             return true;
@@ -789,53 +903,57 @@ public class AdventureDeckEditor extends FDeckEditor {
     }
 
     @Override
-    public void onClose(final Callback<Boolean> canCloseCallback) {
-        if(canCloseCallback == null) {
+    public void onClose(final Consumer<Boolean> canCloseCallback) {
+        if (canCloseCallback == null) {
             resolveClose(null, true);
             return;
         }
 
         Localizer localizer = Forge.getLocalizer();
         if (isDrafting()) {
-            FOptionPane.showConfirmDialog(localizer.getMessage("lblEndAdventureEventConfirm"), localizer.getMessage("lblLeaveDraft"), localizer.getMessage("lblLeave"), localizer.getMessage("lblCancel"), false, new Callback<>() {
-                @Override
-                public void run(Boolean result) {
-                    resolveClose(canCloseCallback, result == true);
-                }
-            });
+            FOptionPane.showConfirmDialog(localizer.getMessage("lblEndAdventureEventConfirm"), localizer.getMessage("lblLeaveDraft"), localizer.getMessage("lblLeave"), localizer.getMessage("lblCancel"), false, result -> resolveClose(canCloseCallback, result == true));
             return;
-        }
-        else if(getEditorConfig().isLimited() || getDeck().isEmpty()) {
+        } else if (getEditorConfig().isLimited() || getDeck().isEmpty()) {
             resolveClose(canCloseCallback, true);
             return;
         }
 
-        String deckError = GameType.Adventure.getDeckFormat().getDeckConformanceProblem(getDeck());
-        if (deckError != null) {
-            //Allow the player to close the editor with an invalid deck, but warn them that cards may be swapped out.
-            String warning = localizer.getMessage("lblAdventureDeckError", deckError);
-            FOptionPane.showConfirmDialog(warning, localizer.getMessage("lblInvalidDeck"), false, new Callback<>() {
-                @Override
-                public void run(Boolean result) {
-                    resolveClose(canCloseCallback, result == true);
-                }
-            });
-            return;
+        String deckError;
+        if (!(getEditorConfig() instanceof ShopConfig))
+        {
+            deckError = getEditorConfig().getDeckFormat().getDeckConformanceProblem(getDeck());
+
+            if (deckError != null) {
+                //Allow the player to close the editor with an invalid deck, but warn them that cards may be swapped out.
+                String warning = localizer.getMessage("lblAdventureDeckError", deckError);
+                FOptionPane.showConfirmDialog(warning, localizer.getMessage("lblInvalidDeck"), false, result -> resolveClose(canCloseCallback, result == true));
+                return;
+            }
         }
 
         resolveClose(canCloseCallback, true);
     }
 
-    private void resolveClose(final Callback<Boolean> canCloseCallback, boolean result) {
-        if(result) {
+    private void resolveClose(final Consumer<Boolean> canCloseCallback, boolean result) {
+        if (result) {
             Current.player().newCards.clear();
-            if(isDrafting())
+            if (isDrafting())
                 getCurrentEvent().eventStatus = AdventureEventController.EventStatus.Abandoned;
         }
-        if(canCloseCallback != null)
-            canCloseCallback.run(result);
+        if (canCloseCallback != null)
+            canCloseCallback.accept(result);
     }
 
+    @Override
+    protected void devAddCards(CardPool cards) {
+        if (!getEditorConfig().usePlayerInventory()) {
+            //Drafting.
+            super.devAddCards(cards);
+            return;
+        }
+        Current.player().addCards(cards);
+        getCatalogPage().scheduleRefresh();
+    }
 
     protected static class AdventureCardManager extends CardManager {
 
@@ -853,9 +971,9 @@ public class AdventureDeckEditor extends FDeckEditor {
         protected String getItemSuffix(Map.Entry<PaperCard, Integer> item) {
             PaperCard card = item.getKey();
             String parentSuffix = super.getItemSuffix(item);
-            if(card.hasNoSellValue()) {
+            if (card.hasNoSellValue()) {
                 String valueText = " [NO VALUE]";
-                if(parentSuffix == null)
+                if (parentSuffix == null)
                     return valueText;
                 return String.join(" ", valueText, parentSuffix);
             }
@@ -869,7 +987,7 @@ public class AdventureDeckEditor extends FDeckEditor {
                 public void drawValue(Graphics g, Map.Entry<PaperCard, Integer> value, FSkinFont font, FSkinColor foreColor, FSkinColor backColor, boolean pressed, float x, float y, float w, float h) {
                     super.drawValue(g, value, font, foreColor, backColor, pressed, x, y, w, h);
 
-                    if(showPriceInfo()) {
+                    if (showPriceInfo()) {
                         float totalHeight = h + 2 * FList.PADDING;
                         float cardArtWidth = totalHeight * CardRenderer.CARD_ART_RATIO;
 
@@ -932,11 +1050,11 @@ public class AdventureDeckEditor extends FDeckEditor {
         protected AdventureDeckSectionPage(DeckSection deckSection, ItemManagerConfig config) {
             super(new AdventureCardManager(), deckSection, config, deckSection.getLocalizedShortName(), iconFromDeckSection(deckSection));
             cardManager.setBtnAdvancedSearchOptions(deckSection == DeckSection.Main);
-            cardManager.setCatalogDisplay(false);
         }
     }
 
     private static final AdventureDeckController ADVENTURE_DECK_CONTROLLER = new AdventureDeckController();
+
     /**
      * Barebones deck controller. Doesn't really need to do anything since Adventure Decks are updated in real time
      * while they're edited, and they're only saved when the adventure is saved.
@@ -948,29 +1066,41 @@ public class AdventureDeckEditor extends FDeckEditor {
         @Override
         public void setEditor(FDeckEditor editor) {
             this.editor = editor;
-            if(editor != null)
-               editor.notifyNewControllerModel();
-        }
-
-        @Override public void setDeck(Deck deck) {
-            this.currentDeck = deck;
-            if(editor != null)
+            if (editor != null)
                 editor.notifyNewControllerModel();
         }
-        @Override public Deck getDeck() { return currentDeck; }
-        @Override public void newDeck() {
+
+        @Override
+        public void setDeck(Deck deck) {
+            this.currentDeck = deck;
+            if (editor != null)
+                editor.notifyNewControllerModel();
+        }
+
+        @Override
+        public Deck getDeck() {
+            return currentDeck;
+        }
+
+        @Override
+        public void newDeck() {
             setDeck(new Deck("Adventure Deck"));
         }
 
         @Override
         public String getDeckDisplayName() {
-            if(currentDeck == null)
+            if (currentDeck == null)
                 return "New Deck";
             return currentDeck.getName();
         }
 
-        @Override public void notifyModelChanged() {} //
-        @Override public void exitWithoutSaving() {} //Too many external variables to just revert the deck. Not supported for now.
+        @Override
+        public void notifyModelChanged() {
+        } //
+
+        @Override
+        public void exitWithoutSaving() {
+        } //Too many external variables to just revert the deck. Not supported for now.
     }
 
     private static class AdventureEventDeckController implements IDeckController {
@@ -984,26 +1114,40 @@ public class AdventureDeckEditor extends FDeckEditor {
         @Override
         public void setEditor(FDeckEditor editor) {
             this.editor = editor;
-            if(editor != null)
+            if (editor != null)
                 editor.notifyNewControllerModel();
         }
 
-        @Override public void setDeck(Deck deck) {this.newDeck();} //Deck is supplied by the event.
-        @Override public void newDeck() {
-            if(editor != null)
+        @Override
+        public void setDeck(Deck deck) {
+            this.newDeck();
+        } //Deck is supplied by the event.
+
+        @Override
+        public void newDeck() {
+            if (editor != null)
                 editor.notifyNewControllerModel();
         }
-        @Override public Deck getDeck() { return currentEvent.registeredDeck; }
+
+        @Override
+        public Deck getDeck() {
+            return currentEvent.registeredDeck;
+        }
 
         @Override
         public String getDeckDisplayName() {
-            if(getDeck() == null)
+            if (getDeck() == null)
                 return "Uninitialized Deck";
             return getDeck().getName();
         }
 
-        @Override public void notifyModelChanged() {} //
-        @Override public void exitWithoutSaving() {} //Too many external variables to just revert the deck. Not supported for now.
+        @Override
+        public void notifyModelChanged() {
+        } //
+
+        @Override
+        public void exitWithoutSaving() {
+        } //Too many external variables to just revert the deck. Not supported for now.
     }
 
 }

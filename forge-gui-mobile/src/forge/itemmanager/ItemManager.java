@@ -37,10 +37,7 @@ import forge.assets.FSkinImage;
 import forge.card.CardZoom.ActivateHandler;
 import forge.gui.FThreads;
 import forge.item.InventoryItem;
-import forge.itemmanager.filters.AdvancedSearchFilter;
-import forge.itemmanager.filters.CardFormatFilter;
-import forge.itemmanager.filters.ItemFilter;
-import forge.itemmanager.filters.TextSearchFilter;
+import forge.itemmanager.filters.*;
 import forge.itemmanager.views.ImageView;
 import forge.itemmanager.views.ItemListView;
 import forge.itemmanager.views.ItemView;
@@ -48,6 +45,7 @@ import forge.menu.FDropDownMenu;
 import forge.menu.FMenuItem;
 import forge.menu.FPopupMenu;
 import forge.screens.FScreen;
+import forge.screens.planarconquest.ConquestCommandersScreen;
 import forge.toolbox.*;
 import forge.toolbox.FEvent.FEventHandler;
 import forge.toolbox.FEvent.FEventType;
@@ -77,7 +75,6 @@ public abstract class ItemManager<T extends InventoryItem> extends FContainer im
     private boolean viewUpdating, needSecondUpdate;
     private Supplier<List<ItemColumn>> sortCols = Suppliers.memoize(ArrayList::new);
     private final TextSearchFilter<? extends T> searchFilter;
-    private CardFormatFilter cardFormatFilter;
 
     private final FLabel btnSearch = new FLabel.ButtonBuilder()
             .icon(Forge.hdbuttons ? FSkinImage.HDSEARCH : FSkinImage.SEARCH).iconScaleFactor(0.9f).selectable().build();
@@ -371,20 +368,95 @@ public abstract class ItemManager<T extends InventoryItem> extends FContainer im
             helper.fillLine(advancedSearchFilter.getWidget(), fieldHeight);
         }
         if (!hideFilters) {
-            for (ItemFilter<? extends T> filter : filters.get()) {
-                helper.include(filter.getWidget(), filter.getPreferredWidth(helper.getRemainingLineWidth(), fieldHeight), fieldHeight);
-            }
-            if (allowSortChange()) {
-                helper.fillLine(cbxSortOptions, fieldHeight);
-            }
-            helper.newLine(-ItemFilter.PADDING);
-            if (currentView.getPnlOptions().getChildCount() > 0) {
-                helper.fillLine(currentView.getPnlOptions(), fieldHeight + ItemFilter.PADDING);
-            } else {
-                helper.offset(0, -fieldHeight); //prevent showing whitespace for empty view options panel
-            }
+            if (Forge.isLandscapeMode())
+                drawLandscape(this.filters.get(), helper, fieldHeight);
+            else
+                drawPortrait(this.filters.get(), helper, width, fieldHeight);
         }
         helper.fill(currentView.getScroller());
+    }
+
+    private void drawLandscape(List<ItemFilter<? extends T>> filters, LayoutHelper helper, float fieldHeight) {
+        // TODO reduce landscape mode combobox buttons for the filters
+        for (ItemFilter<? extends T> filter : filters) {
+            helper.include(filter.getWidget(), filter.getPreferredWidth(helper.getRemainingLineWidth(), fieldHeight), fieldHeight);
+        }
+        if (allowSortChange()) {
+            helper.fillLine(cbxSortOptions, fieldHeight);
+        }
+        helper.newLine(-ItemFilter.PADDING);
+        if (currentView.getPnlOptions().getChildCount() > 0) {
+            helper.fillLine(currentView.getPnlOptions(), fieldHeight + ItemFilter.PADDING);
+        } else {
+            helper.offset(0, -fieldHeight); //prevent showing whitespace for empty view options panel
+        }
+    }
+
+    private void drawPortrait(List<ItemFilter<? extends T>> filters, LayoutHelper helper, float width, float fieldHeight) {
+        CardTypeFilter cardTypeFilter = null;
+        CardColorFilter colorFilter = null;
+        CardFormatFilter cardFormatFilter = null;
+        DeckColorFilter deckColorFilter = null;
+        DeckFormatFilter deckFormatFilter = null;
+        ConquestCommandersScreen.CommanderColorFilter commanderColorFilter = null;
+        ConquestCommandersScreen.CommanderOriginFilter commanderOriginFilter = null;
+        for (ItemFilter<? extends T> filter : filters) {
+            if (filter instanceof CardTypeFilter ct) {
+                cardTypeFilter = ct;
+                continue;
+            }
+            if (filter instanceof CardColorFilter cr) {
+                colorFilter = cr;
+                continue;
+            }
+            if (filter instanceof CardFormatFilter cf) {
+                cardFormatFilter = cf;
+                continue;
+            }
+            if (filter instanceof DeckColorFilter dc) {
+                deckColorFilter = dc;
+                continue;
+            }
+            if (filter instanceof DeckFormatFilter df) {
+                deckFormatFilter = df;
+                continue;
+            }
+            if (filter instanceof ConquestCommandersScreen.CommanderColorFilter ccf) {
+                commanderColorFilter = ccf;
+                continue;
+            }
+            if (filter instanceof ConquestCommandersScreen.CommanderOriginFilter cof) {
+                commanderOriginFilter = cof;
+                continue;
+            }
+            helper.include(filter.getWidget(), filter.getPreferredWidth(helper.getRemainingLineWidth(), fieldHeight), fieldHeight);
+        }
+        if (deckColorFilter != null) {
+            helper.fillLine(deckColorFilter.getWidget(), fieldHeight);
+        }
+        if (deckFormatFilter != null) {
+            helper.fillLine(deckFormatFilter.getWidget(), fieldHeight);
+        }
+        if (colorFilter != null)
+            helper.fillLine(colorFilter.getWidget(), fieldHeight);
+        if (cardTypeFilter != null)
+            helper.fillLine(cardTypeFilter.getWidget(), fieldHeight);
+        if (commanderColorFilter != null)
+            helper.fillLine(commanderColorFilter.getWidget(), fieldHeight);
+        if (commanderOriginFilter != null)
+            helper.fillLine(commanderOriginFilter.getWidget(), fieldHeight);
+        helper.newLine();
+        if (cardFormatFilter != null)
+            helper.include(cardFormatFilter.getWidget(), width / 2f, fieldHeight);
+        if (allowSortChange()) {
+            helper.fillLine(cbxSortOptions, fieldHeight);
+        }
+        helper.newLine(-ItemFilter.PADDING);
+        if (currentView.getPnlOptions().getChildCount() > 0) {
+            helper.fillLine(currentView.getPnlOptions(), fieldHeight + ItemFilter.PADDING);
+        } else {
+            helper.offset(0, -fieldHeight); //prevent showing whitespace for empty view options panel
+        }
     }
 
     public Class<T> getGenericType() {
@@ -638,25 +710,6 @@ public abstract class ItemManager<T extends InventoryItem> extends FContainer im
         btnAdvancedSearchOptions.setEnabled(enable);
     }
 
-    public void setCatalogDisplay(boolean enable) {
-        if (cardFormatFilter == null)
-            return;
-        if (cardFormatFilter.getMainComponent() instanceof FComboBox<?>) {
-            if (!enable)
-                ((FComboBox<?>) cardFormatFilter.getMainComponent()).setSelectedIndex(0);
-            cardFormatFilter.getMainComponent().setEnabled(enable);
-        }
-    }
-
-    public int getCatalogSelectedIndex() {
-        if (cardFormatFilter == null)
-            return 0;
-        if (cardFormatFilter.getMainComponent() instanceof FComboBox<?>) {
-            return((FComboBox<?>) cardFormatFilter.getMainComponent()).getSelectedIndex();
-        }
-        return 0;
-    }
-
     public void scrollSelectionIntoView() {
         currentView.scrollSelectionIntoView();
     }
@@ -675,11 +728,13 @@ public abstract class ItemManager<T extends InventoryItem> extends FContainer im
 
     protected abstract AdvancedSearchFilter<? extends T> createAdvancedSearchFilter();
 
+    protected Iterable<Entry<T, Integer>> getUnique(final Iterable<Entry<T, Integer>> items) {
+        return Aggregates.uniqueByLast(items, from -> from.getKey().getName());
+    }
+
     public void addFilter(final ItemFilter<? extends T> filter) {
         filters.get().add(filter);
         add(filter.getWidget());
-        if (filter instanceof CardFormatFilter)
-            cardFormatFilter = (CardFormatFilter) filter;
 
         boolean visible = !hideFilters;
         filter.getWidget().setVisible(visible);
@@ -857,19 +912,29 @@ public abstract class ItemManager<T extends InventoryItem> extends FContainer im
     }
 
     public void updateView(final boolean forceFilter, final Iterable<T> itemsToSelect) {
+        //TO-maybe-DO: Share logic between this and identical method in desktop.
         final boolean useFilter = (forceFilter && (filterPredicate != null)) || !isUnfiltered();
 
-        if (useFilter || forceFilter) {
-            model.clear();
-
-            Iterable<Entry<T, Integer>> items = pool;
-            if (useFilter) {
-                Predicate<Entry<T, Integer>> pred = x -> filterPredicate.test(x.getKey());
-                items = IterableUtil.filter(pool, pred);
-            }
-            model.addItems(items);
+        if (useFilter || this.wantUnique || forceFilter) {
+            this.model.clear();
         }
 
+        if (useFilter && this.wantUnique) {
+            final Predicate<Entry<T, Integer>> filterForPool = x -> this.filterPredicate.test(x.getKey());
+            final Iterable<Entry<T, Integer>> items = getUnique(IterableUtil.filter(this.pool, filterForPool));
+            this.model.addItems(items);
+        }
+        else if (useFilter) {
+            final Predicate<Entry<T, Integer>> pred = x -> this.filterPredicate.test(x.getKey());
+            this.model.addItems(IterableUtil.filter(this.pool, pred));
+        }
+        else if (this.wantUnique) {
+            final Iterable<Entry<T, Integer>> items = getUnique(this.pool);
+            this.model.addItems(items);
+        }
+        else if (forceFilter) {
+            this.model.addItems(this.pool);
+        }
         currentView.refresh(itemsToSelect, getSelectedIndex(), forceFilter ? 0 : currentView.getScrollValue());
 
         //update ratio of # in filtered pool / # in total pool
@@ -1135,13 +1200,15 @@ public abstract class ItemManager<T extends InventoryItem> extends FContainer im
     }
 
     public float getPileByWidth() {
-        if (cbxSortOptions != null) {
-            return cbxSortOptions.getWidth();
-        }
         if (filters.get().isEmpty()) {
             return 0f;
         }
-        return filters.get().get(filters.get().size() - 1).getWidget().getWidth();
+        float preferredSize = filters.get().get(filters.get().size() - 1).getWidget().getWidth();
+        if (cbxSortOptions != null && Math.abs(1 - (cbxSortOptions.getWidth() / preferredSize)) < 0.25) {
+            //Match the size of the sort box if it's not too far off from what we'd prefer.
+            return cbxSortOptions.getWidth();
+        }
+        return preferredSize;
     }
 
     @Override
