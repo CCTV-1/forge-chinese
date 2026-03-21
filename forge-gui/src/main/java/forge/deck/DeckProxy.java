@@ -89,8 +89,8 @@ public class DeckProxy implements InventoryItem {
 
     public CardEdition getEdition() {
         if (edition == null) {
-            if (deck instanceof PreconDeck) {
-                edition = StaticData.instance().getEditions().get(((PreconDeck) deck).getEdition());
+            if (deck instanceof PreconDeck pd) {
+                edition = StaticData.instance().getEditions().get(pd.getEdition());
             }
             else if (!isGeneratedDeck()) {
                 edition = StaticData.instance().getEditions().getTheLatestOfAllTheOriginalEditionsOfCardsIn(getDeck().getAllCardsInASinglePool());
@@ -415,7 +415,7 @@ public class DeckProxy implements InventoryItem {
 
     public Integer getAverageCMC() {
         if (avgCMC == null) {
-            avgCMC = Deck.getAverageCMC(getDeck());
+            avgCMC = getDeck().getAverageCMC();
         }
         return avgCMC;
     }
@@ -656,7 +656,6 @@ public class DeckProxy implements InventoryItem {
         return decks;
     }
 
-    //todo custom starter decks in adventure
     public static List<DeckProxy> getAllCustomStarterDecks() {
         final List<DeckProxy> decks = new ArrayList<>();
         final IStorage<Deck> easy = FModel.getDecks().getCustomStarterDecks();

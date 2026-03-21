@@ -22,9 +22,6 @@ import forge.util.Localizer;
 import forge.util.MyRandom;
 
 public class FlipCoinEffect extends SpellAbilityEffect {
-
-    public static boolean[] BOTH_CHOICES = new boolean[] {false, true};
-
     /* (non-Javadoc)
      * @see forge.card.abilityfactory.SpellEffect#getStackDescription(java.util.Map, forge.card.spellability.SpellAbility)
      */
@@ -181,7 +178,7 @@ public class FlipCoinEffect extends SpellAbilityEffect {
                     result++;
                 }
             }
-            // until is sequential
+            // CR 705.3 relevant: until is sequential
         }
         while (sa.hasParam("FlipUntilYouLose") && won);
         return result;
@@ -214,7 +211,7 @@ public class FlipCoinEffect extends SpellAbilityEffect {
             }
         }
 
-        boolean result = flipResults.size() == 1 ? flipResults.iterator().next() : flipper.getController().chooseFlipResult(sa, flipper, BOTH_CHOICES, true);
+        boolean result = flipResults.size() == 1 ? flipResults.iterator().next() : flipper.getController().chooseFlipResult(sa, flipper, true);
         boolean wonOrHeads = result == choice;
 
         String outcome;
