@@ -96,7 +96,6 @@ public class AdventureDeckEditor extends FDeckEditor {
         @Override
         public List<CardEdition> getBasicLandSets(Deck currentDeck) {
             List<CardEdition> unlockedEditions = new ArrayList<>();
-            unlockedEditions.add(FModel.getMagicDb().getEditions().get("JMP"));
 
             // Loop through Landscapes and add them to unlockedEditions
             Map<String, CardEdition> editionsByName = new HashMap<>();
@@ -124,6 +123,14 @@ public class AdventureDeckEditor extends FDeckEditor {
                     unlockedEditions.add(edition);
                 }
             }
+
+            // Add the default edition unless it's already unlocked above
+            String defaultArtSetCode = Config.instance().getConfigData().defaultBasicLandSet;
+            CardEdition defaultArtEdition = FModel.getMagicDb().getEditions().get(defaultArtSetCode);
+            if (!unlockedEditions.contains(defaultArtEdition)) {
+                unlockedEditions.add(defaultArtEdition);
+            }
+
             return unlockedEditions;
         }
     }
@@ -196,7 +203,7 @@ public class AdventureDeckEditor extends FDeckEditor {
 
         @Override
         public DeckFormat getDeckFormat() {
-            return DeckFormat.Limited;
+            return event.format.getDeckFormat();
         }
 
         @Override
@@ -239,14 +246,14 @@ public class AdventureDeckEditor extends FDeckEditor {
                     case Ready:
                         return new DeckEditorPage[]{
                                 new AdventureDeckSectionPage(DeckSection.Main, ItemManagerConfig.DRAFT_POOL),
-                                new AdventureDeckSectionPage(DeckSection.Sideboard, ItemManagerConfig.SIDEBOARD)
+                                new AdventureDeckSectionPage(DeckSection.Sideboard, ItemManagerConfig.DRAFT_POOL)
                         };
                     case Entered:
                         if (event.getDraft() != null)
                             return new DeckEditorPage[]{
                                     new DraftPackPage(new AdventureCardManager()),
                                     new AdventureDeckSectionPage(DeckSection.Main, ItemManagerConfig.DRAFT_POOL),
-                                    new AdventureDeckSectionPage(DeckSection.Sideboard, ItemManagerConfig.SIDEBOARD)
+                                    new AdventureDeckSectionPage(DeckSection.Sideboard, ItemManagerConfig.DRAFT_POOL)
                             };
                     default:
                         return new DeckEditorPage[]{
@@ -255,22 +262,17 @@ public class AdventureDeckEditor extends FDeckEditor {
                         };
 
                 }
-            } else if (event.format == AdventureEventController.EventFormat.Sealed) {
+            } else if (event.format == AdventureEventController.EventFormat.Jumpstart || event.format == AdventureEventController.EventFormat.Sealed) {
                 return new DeckEditorPage[]{
-                        new AdventureDeckSectionPage(DeckSection.Sideboard, ItemManagerConfig.DRAFT_POOL),
-                        new AdventureDeckSectionPage(DeckSection.Main, ItemManagerConfig.DRAFT_POOL)
-                };
-            } else if (event.format == AdventureEventController.EventFormat.Jumpstart) {
-                return new DeckEditorPage[]{
-                        new AdventureDeckSectionPage(DeckSection.Main, ItemManagerConfig.DRAFT_POOL),
-                        new AdventureDeckSectionPage(DeckSection.Sideboard, ItemManagerConfig.SIDEBOARD)};
+                        new AdventureDeckSectionPage(DeckSection.Main, ItemManagerConfig.SEALED_POOL),
+                        new AdventureDeckSectionPage(DeckSection.Sideboard, ItemManagerConfig.SEALED_POOL)};
             }
             return new DeckEditorPage[]{};
         }
     }
 
     private static class ContentPreviewPage extends CatalogPage {
-        Deck contents = new Deck();
+        Deck contents;
 
         protected ContentPreviewPage(Deck cardsToShow) {
             super(new AdventureCardManager(), ItemManagerConfig.ADVENTURE_STORE_POOL, Forge.getLocalizer().getMessage("lblInventory"), CATALOG_ICON);
@@ -652,7 +654,7 @@ public class AdventureDeckEditor extends FDeckEditor {
         for (int i = 0; i < currentEvent.participants.length && i < opponentDecks.length; i++) {
             currentEvent.participants[i].setDeck(opponentDecks[i]);
         }
-        currentEvent.draftedDeck = (Deck) currentEvent.registeredDeck.copyTo("Draft Deck");
+        currentEvent.rewardDeck = (Deck) currentEvent.registeredDeck.copyTo("Draft Deck");
         if (allowAddBasic()) {
             showAddBasicLandsDialog();
             //Might be annoying if you haven't pruned your deck yet, but best to remind player that
