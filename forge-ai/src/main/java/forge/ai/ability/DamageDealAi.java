@@ -190,9 +190,8 @@ public class DamageDealAi extends DamageAiBase {
                     }
                     return new AiAbilityDecision(0, AiPlayDecision.StackNotEmpty);
                 }
-            } else {
-                return new AiAbilityDecision(0, AiPlayDecision.CantPlayAi);
             }
+            return new AiAbilityDecision(0, AiPlayDecision.CantPlayAi);
         } else if ("NinThePainArtist".equals(logic)) {
             // Make sure not to mana lock ourselves + make the opponent draw cards into an immediate discard
             if (ai.getGame().getPhaseHandler().is(PhaseType.END_OF_TURN)) {
@@ -255,11 +254,11 @@ public class DamageDealAi extends DamageAiBase {
 
         // test what happens if we chain this to another damaging spell
         if (chainDmg != null) {
-            int extraDmg = chainDmg.getValue();
-            boolean willTargetIfChained = damageTargetAI(ai, sa, dmg + extraDmg, false);
-            if (!willTargetIfChained) {
-                return new AiAbilityDecision(0, AiPlayDecision.TargetingFailed); // won't play it even in chain
-            } else if (willTargetIfChained && chainDmg.getKey().getApi() == ApiType.Pump && sa.getTargets().isTargetingAnyPlayer()) {
+            if (!damageTargetAI(ai, sa, dmg + chainDmg.getValue(), false)) {
+                // won't play it even in chain
+                return new AiAbilityDecision(0, AiPlayDecision.TargetingFailed);
+            }
+            if (chainDmg.getKey().getApi() == ApiType.Pump && sa.getTargets().isTargetingAnyPlayer()) {
                 // we're trying to chain a pump spell to a damage spell targeting a player, that won't work
                 // so run an additional check to ensure that we want to cast the current spell separately
                 sa.resetTargets();
@@ -325,12 +324,11 @@ public class DamageDealAi extends DamageAiBase {
             final Player pl, final boolean mandatory) {
         // wait until stack is empty (prevents duplicate kills)
         if (!sa.isTrigger() && !ai.getGame().getStack().isEmpty()) {
-            //TODO:all removal APIs require a check to prevent duplicate kill/bounce/exile/etc.
-            //      The original code is a blunt instrument that also blocks all use of removal as interrupts. The issue is
-            //      with the AI not having code to consider what occurred previously in the stack thus it has no memory of
-            //      removing a target already if something else is placed on top of the stack. A better solution is to place
-            //      the checking mechanism after the target is chosen and determine if the topstack invalidates the earlier
-            //      removal (shroud effect, pump against damage) so a new removal can/should be applied if possible.
+            //TODO: The original code is a blunt instrument that also blocks all use of removal as interrupts.
+            //      Destroy, ChangeZone, DealDamage and Fight targeting skip creatures the stack already kills
+            //      (ComputerUtil.filterCreaturesThatWillDieThisTurn), but other removal APIs don't yet (e.g. curse
+            //      pumps, -1/-1 counters, gain control). Also missing: determine if something above the earlier removal
+            //      on the stack invalidates it (shroud effect, pump against damage) so a new removal can/should be applied.
             //return null;
         }
         final TargetRestrictions tgt = sa.getTargetRestrictions();
@@ -352,18 +350,11 @@ public class DamageDealAi extends DamageAiBase {
         killables = ComputerUtil.filterAITgts(sa, ai, killables, true);
 
         // Try not to target anything which will already be dead by the time the spell resolves
-        killables = ComputerUtil.filterCreaturesThatWillDieThisTurn(ai, killables, sa);
+        killables = ComputerUtil.filterCreaturesThatWillDieThisTurn(ai, killables);
 
         Card targetCard = null;
         if (pl.isOpponentOf(ai) && activator.equals(ai) && !killables.isEmpty()) {
-            if (sa.getTargetRestrictions().canTgtPlaneswalker()) {
-                targetCard = ComputerUtilCard.getBestPlaneswalkerAI(killables);
-            }
-            if (targetCard == null) {
-                targetCard = ComputerUtilCard.getBestCreatureAI(killables);
-            }
-
-            return targetCard;
+            return ComputerUtilCard.getBestRemovalTargetAI(ai, killables);
         }
 
         if (!mandatory) {
@@ -376,12 +367,7 @@ public class DamageDealAi extends DamageAiBase {
 
         if (!hPlay.isEmpty()) {
             if (pl.isOpponentOf(ai) && activator.equals(ai)) {
-                if (sa.getTargetRestrictions().canTgtPlaneswalker()) {
-                    targetCard = ComputerUtilCard.getBestPlaneswalkerAI(controlledByOpps);
-                }
-                if (targetCard == null) {
-                    targetCard = ComputerUtilCard.getBestCreatureAI(controlledByOpps);
-                }
+                targetCard = ComputerUtilCard.getBestRemovalTargetAI(ai, controlledByOpps);
             }
             if (targetCard == null) {
                 targetCard = ComputerUtilCard.getWorstCreatureAI(hPlay);
@@ -525,7 +511,7 @@ public class DamageDealAi extends DamageAiBase {
 
         // AssumeAtLeastOneTarget is used for cards with funky targeting implementation like Fight with Fire which would
         // otherwise confuse the AI by returning 0 unexpectedly during SA "AI can play" tests.
-        if (tgt.getMaxTargets(source, sa) <= 0 && !logic.equals("AssumeAtLeastOneTarget")) {
+        if (sa.getMaxTargets() <= 0 && !logic.equals("AssumeAtLeastOneTarget")) {
             return false;
         }
 
@@ -634,7 +620,7 @@ public class DamageDealAi extends DamageAiBase {
                 Card c = dealDamageChooseTgtC(ai, sa, dmg, noPrevention, enemy, false);
                 if (c != null) {
                     //option to hold removal instead only applies for single targeted removal
-                    if (sa.isSpell() && !divided && !immediately && tgt.getMaxTargets(source, sa) == 1) {
+                    if (sa.isSpell() && !divided && !immediately && sa.getMaxTargets() == 1) {
                         if (!ComputerUtilCard.useRemovalNow(sa, c, dmg, ZoneType.Graveyard)) {
                             return false;
                         }
@@ -662,7 +648,7 @@ public class DamageDealAi extends DamageAiBase {
                 final Card c = dealDamageChooseTgtC(ai, sa, dmg, noPrevention, enemy, mandatory);
                 if (c != null) {
                     //option to hold removal instead only applies for single targeted removal
-                    if (!immediately && tgt.getMaxTargets(source, sa) == 1 && !divided) {
+                    if (!immediately && sa.getMaxTargets() == 1 && !divided) {
                         if (!ComputerUtilCard.useRemovalNow(sa, c, dmg, ZoneType.Graveyard)) {
                             return false;
                         }
@@ -723,12 +709,12 @@ public class DamageDealAi extends DamageAiBase {
         }
 
         // fell through all the choices, no targets left?
-        int minTgts = tgt.getMinTargets(source, sa);
+        int minTgts = sa.getMinTargets();
         if (tcs.size() < minTgts || tcs.size() == 0) {
             if (mandatory) {
                 // Sanity check: if there are any legal non-owned targets after the check (which may happen for complex cards like Rift Bolt),
                 // choose a random opponent's target before forcing targeting of own stuff
-                List<GameEntity> allTgtEntities = sa.getTargetRestrictions().getAllCandidates(sa, true);
+                List<GameEntity> allTgtEntities = sa.getTargetRestrictions().getAllCandidates(sa);
                 for (GameEntity ent : allTgtEntities) {
                     if ((ent instanceof Player && ((Player)ent).isOpponentOf(ai))
                             || (ent instanceof Card && ((Card)ent).getController().isOpponentOf(ai))) {
@@ -927,11 +913,6 @@ public class DamageDealAi extends DamageAiBase {
         final String damage = sa.getParam("NumDmg");
         int dmg = calculateDamageAmount(sa, source, damage);
 
-        // Remove all damage
-        if (sa.hasParam("Remove")) {
-            return new AiAbilityDecision(100, AiPlayDecision.WillPlay);
-        }
-
         if (damage.equals("X") && sa.getSVar(damage).equals("Count$xPaid")) {
             dmg = ComputerUtilCost.setMaxXValue(sa, ai, true);
         }
@@ -1045,7 +1026,7 @@ public class DamageDealAi extends DamageAiBase {
     public static Pair<SpellAbility, Integer> getDamagingSAToChain(Player ai, SpellAbility sa, String damage) {
         if (!ai.getController().isAI()) {
             return null; // should only work for the actual AI player
-        } else if (((PlayerControllerAi)ai.getController()).getAi().usesSimulation()) {
+        } else if (((PlayerControllerAi)ai.getController()).getAi().usesFullSimulation()) {
             // simulated AI shouldn't use paired decisions, it tries to find complex decisions on its own
             return null;
         }

@@ -42,6 +42,9 @@ import static forge.adventure.data.RewardData.generateAllCards;
  * Utility class to deck generation and card filtering
  */
 public class CardUtil {
+    private static final HashMap<String, Pattern> patternMap = new HashMap<>(256);
+    private static final ArrayList<PaperCard> filteredCardList = new ArrayList<>(512);
+
     public static final class CardPredicate implements Predicate<PaperCard> {
         enum ColorType {
             Any,
@@ -83,7 +86,7 @@ public class CardUtil {
                 return !this.shouldBeEqual;
             if (!this.editions.isEmpty() && !this.editions.contains(card.getEdition())) {
                 boolean found = false;
-                List<PaperCard> allPrintings = FModel.getMagicDb().getCommonCards().getAllCardsNoAlt(card.getCardName());
+                List<PaperCard> allPrintings = FModel.getMagicDb().getCommonCards().getAllCards(card);
                 for (PaperCard c : allPrintings) {
                     if (this.editions.contains(c.getEdition())) {
                         found = true;
@@ -95,7 +98,7 @@ public class CardUtil {
             }
             if (!this.minDate.isEmpty()) {
                 boolean found = false;
-                List<PaperCard> allPrintings = FModel.getMagicDb().getCommonCards().getAllCardsNoAlt(card.getCardName());
+                List<PaperCard> allPrintings = FModel.getMagicDb().getCommonCards().getAllCards(card);
                 List<CardEdition> cardEditionList = new ArrayList<>();
 
                 Date d = parseDate(this.minDate);
@@ -209,17 +212,23 @@ public class CardUtil {
 
             if (!this.deckNeeds.isEmpty()) {
                 boolean found = false;
-                for (String need : this.deckNeeds) {
-                    // FormatExpected: X$Y, where X is DeckHints.Type and Y is a string descriptor
-                    String[] parts = need.split("\\$");
+                int needsSize = this.deckNeeds.size();
+                for (int i = 0; i < needsSize; i++) {
+                    String need = this.deckNeeds.get(i);
+                    if (need == null) continue;
 
-                    if (parts.length != 2) {
+                    int dollarIdx = need.indexOf('$');
+                    if (dollarIdx == -1 || dollarIdx == 0 || dollarIdx == need.length() - 1) {
                         continue;
                     }
-                    DeckHints.Type t = DeckHints.Type.valueOf(parts[0].toUpperCase());
+
+                    String part0 = need.substring(0, dollarIdx);
+                    String part1 = need.substring(dollarIdx + 1);
+
+                    DeckHints.Type t = DeckHints.Type.valueOf(part0.toUpperCase());
 
                     DeckHints hints = card.getRules().getAiHints().getDeckHints();
-                    if (hints != null && hints.contains(t, parts[1])) {
+                    if (hints != null && hints.contains(t, part1)) {
                         found = true;
                         break;
                     }
@@ -234,8 +243,16 @@ public class CardUtil {
         private Pattern getPattern(RewardData type) {
             if (type.cardText == null || type.cardText.isEmpty())
                 return null;
+
+            Pattern cachedPattern = patternMap.get(type.cardText);
+            if (cachedPattern != null) {
+                return cachedPattern;
+            }
+
             try {
-                return Pattern.compile(type.cardText, Pattern.CASE_INSENSITIVE);
+                Pattern compiled = Pattern.compile(type.cardText, Pattern.CASE_INSENSITIVE);
+                patternMap.put(type.cardText, compiled);
+                return compiled;
             } catch (Exception e) {
                 System.err.println("[" + type.cardName + "|" + type.itemName + "]\n" + e);
                 return null;
@@ -340,6 +357,7 @@ public class CardUtil {
      */
     public static void clearPriceCache() {
         priceData = null;
+        AdventureReadPriceList.clearPriceDataInstance();
     }
 
     private static AdventureReadPriceList.PriceData getPriceData() {
@@ -850,19 +868,33 @@ public class CardUtil {
             }
             validCards = FModel.getMagicDb().getCommonCards().getAllCardsNoAlt(cardName, combined_predicate);
         } else {
-            validCards = FModel.getMagicDb().getCommonCards().getUniqueCardsNoAlt(cardName);
+            validCards = List.of(FModel.getMagicDb().getCommonCards().getUniqueByNameNoAlt(cardName));
             // Filter to allowed editions to prevent showing printings from wrong sets.
             if (configData.allowedEditions != null && configData.allowedEditions.length > 0) {
                 Set<String> allowed = new HashSet<>(Arrays.asList(configData.allowedEditions));
-                validCards = validCards.stream()
-                    .filter(card -> allowed.contains(card.getEdition()))
-                    .collect(Collectors.toList());
-                if (validCards.isEmpty()) {
-                    // Card was from a non-allowed edition, find any printing from an allowed one.
-                    validCards = FModel.getMagicDb().getCommonCards().getAllCardsNoAlt(cardName).stream()
-                        .filter(card -> allowed.contains(card.getEdition()))
-                        .collect(Collectors.toList());
+
+                filteredCardList.clear();
+                int cardsSize = validCards.size();
+                for (int i = 0; i < cardsSize; i++) {
+                    PaperCard card = validCards.get(i);
+                    if (card != null && allowed.contains(card.getEdition())) {
+                        filteredCardList.add(card);
+                    }
                 }
+
+                // Unify results
+                if (filteredCardList.isEmpty()) {
+                    List<PaperCard> fallbackCards = FModel.getMagicDb().getCommonCards().getAllCardsNoAlt(cardName);
+                    int fallbackSize = fallbackCards.size();
+                    for (int i = 0; i < fallbackSize; i++) {
+                        PaperCard card = fallbackCards.get(i);
+                        if (card != null && allowed.contains(card.getEdition())) {
+                            filteredCardList.add(card);
+                        }
+                    }
+                }
+
+                validCards = new ArrayList<>(filteredCardList);
             }
         }
         if (validCards.isEmpty()) {
@@ -885,7 +917,7 @@ public class CardUtil {
         }
         List<PaperCard> cardPool = Config.instance().getSettingData().useAllCardVariants
                 ? FModel.getMagicDb().getCommonCards().getAllCardsNoAlt(cardName)
-                : FModel.getMagicDb().getCommonCards().getUniqueCardsNoAlt(cardName);
+                : List.of(FModel.getMagicDb().getCommonCards().getUniqueByNameNoAlt(cardName));
         List<PaperCard> validCards = cardPool.stream()
                 .filter(input -> input.getEdition().equals(edition)).collect(Collectors.toList());
 
@@ -910,12 +942,12 @@ public class CardUtil {
             }
             // For unique cards, replace non-allowed printings with allowed ones.
             List<PaperCard> filtered = new ArrayList<>();
-            for (PaperCard card : FModel.getMagicDb().getCommonCards().getUniqueCardsNoAlt()) {
+            for (PaperCard card : FModel.getMagicDb().getCommonCards().getUniqueCards()) {
                 if (card == null) continue;
                 if (allowed.contains(card.getEdition())) {
                     filtered.add(card);
                 } else {
-                    for (PaperCard p : FModel.getMagicDb().getCommonCards().getAllCardsNoAlt(card.getName())) {
+                    for (PaperCard p : FModel.getMagicDb().getCommonCards().getAllCards(card)) {
                         if (allowed.contains(p.getEdition())) {
                             filtered.add(p);
                             break;
@@ -927,7 +959,7 @@ public class CardUtil {
         }
         return allCardVariants
             ? FModel.getMagicDb().getCommonCards().getAllCards()
-            : FModel.getMagicDb().getCommonCards().getUniqueCardsNoAlt();
+            : FModel.getMagicDb().getCommonCards().getUniqueCards();
     }
 
     /**
@@ -971,7 +1003,7 @@ public class CardUtil {
         Set<String> allowed = new HashSet<>(Arrays.asList(configData.allowedEditions));
         if (allowed.contains(card.getEdition()))
             return card;
-        for (PaperCard p : FModel.getMagicDb().getCommonCards().getAllCardsNoAlt(card.getName())) {
+        for (PaperCard p : FModel.getMagicDb().getCommonCards().getAllCards(card)) {
             if (allowed.contains(p.getEdition()))
                 return p;
         }

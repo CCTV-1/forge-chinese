@@ -73,7 +73,6 @@ public class TargetingOverlay {
             return;
         for (CardView c : cardsonBattlefield) {
             final CardView attachedTo = c.getAttachedTo();
-            final Iterable<CardView> attachedCards = c.getAttachedCards();
             final CardView paired = c.getPairedWith();
             if (null != attachedTo) {
                 if (attachedTo.getController() != null && !attachedTo.getController().equals(c.getController())) {
@@ -83,11 +82,9 @@ public class TargetingOverlay {
             if (null != attachedTo && c == attachedTo.getAttachedTo()) {
                 drawArrow(g, endpoints.get(attachedTo.getId()), endpoints.get(c.getId()), ArcConnection.Friends);
             }
-            if (null != attachedCards) {
-                for (final CardView enc : attachedCards) {
-                    if (enc.getController() != null && !enc.getController().equals(c.getController())) {
-                        drawArrow(g, endpoints.get(c.getId()), endpoints.get(enc.getId()), ArcConnection.Friends);
-                    }
+            for (final CardView enc : c.getAttachedCards()) {
+                if (enc.getController() != null && !enc.getController().equals(c.getController())) {
+                    drawArrow(g, endpoints.get(c.getId()), endpoints.get(enc.getId()), ArcConnection.Friends);
                 }
             }
             if (null != paired) {
@@ -108,7 +105,7 @@ public class TargetingOverlay {
                     if (cards == null) continue;
                     for (final CardView blockingCard : cards) {
                         if (!attackingCard.equals(c) && !blockingCard.equals(c)) { continue; }
-                        drawArrow(g, endpoints.get(attackingCard.getId()), endpoints.get(blockingCard.getId()), ArcConnection.FoesBlocking);
+                        drawArrow(g, endpoints.get(blockingCard.getId()), endpoints.get(attackingCard.getId()), ArcConnection.FoesBlocking);
                     }
                     if (playerViewSet != null) {
                         for (final PlayerView p : playerViewSet) {
@@ -140,9 +137,10 @@ public class TargetingOverlay {
                 color = foeDefColor;
         }
 
-        if (FModel.getPreferences().getPrefBoolean(ForgePreferences.FPref.UI_USE_LASER_ARROWS))
-            g.drawLineArrow(Utils.scale(3), color, start.x, start.y, end.x, end.y);
-        else
-            g.drawArrow(BORDER_THICKNESS, ARROW_THICKNESS, ARROW_SIZE, color, start.x, start.y, end.x, end.y);
+        switch (FModel.getPreferences().getPref(ForgePreferences.FPref.UI_ARROW_OPTION)) {
+            case "Point" -> g.drawCurvedLinePointer(Utils.scale(3), color.getColor(), Color.WHITE, start.x, start.y, end.x, end.y);
+            case "Line" -> g.drawLinePointer(Utils.scale(3), color.getColor(), start.x, start.y, end.x, end.y);
+            default -> g.drawCurvedArrow(Utils.scale(3), color.alphaColor(0.8f).getColor(), FSkinColor.getStandardColor(Color.WHITE).alphaColor(0.9f).getColor(), start.x, start.y, end.x, end.y, ArcConnection.Friends.equals(connects));
+        }
     }
 }

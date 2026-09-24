@@ -20,6 +20,7 @@ import forge.game.combat.Combat;
 import forge.game.combat.CombatUtil;
 import forge.game.mana.Mana;
 import forge.game.player.Player;
+import forge.game.staticability.StaticAbilityCantBeBeamedUp;
 import forge.game.spellability.OptionalCost;
 import forge.game.spellability.SpellAbility;
 import forge.game.spellability.SpellAbilityStackInstance;
@@ -267,11 +268,10 @@ public class CardProperty {
                 return false;
             }
         } else if (property.equals("targetedBy")) {
-            if (!(spellAbility instanceof SpellAbility)) {
+            if (!(spellAbility instanceof SpellAbility sa)) {
                 return false;
             }
-            SpellAbility sp = (SpellAbility)spellAbility;
-            if (!sp.getRootAbility().isTargeting(card)) {
+            if (!sa.getRootAbility().isTargeting(card)) {
                 return false;
             }
         } else if (property.equals("TargetedPlayerCtrl")) {
@@ -658,7 +658,7 @@ public class CardProperty {
                             return false;
                         break;
                     case "LastCastThisTurn":
-                        final List<Card> c = game.getStack().getSpellsCastThisTurn();
+                        final List<Card> c = game.getStack().getSpellCardsCastThisTurn();
                         if (c.isEmpty() || !card.sharesColorWith(c.get(c.size() - 1))) {
                             return false;
                         }
@@ -960,7 +960,9 @@ public class CardProperty {
                 return false;
             }
 
-            if (!card.getZone().isCardAddedThisTurn(card, origin)) {
+            // an LKI copy has no current zone
+            final Zone zone = card.getLastKnownZone();
+            if (zone == null || !zone.isCardAddedThisTurn(card, origin)) {
                 return false;
             }
         } else if (property.startsWith("ThisTurnEntered")) {
@@ -1150,14 +1152,6 @@ public class CardProperty {
             if (card.getDamageHistory().getDamageDoneThisTurn(true, true, null, property.split(" ")[1], card, sourceController, spellAbility) == 0) {
                 return false;
             }
-        } else if (property.startsWith("controllerWasDealtCombatDamageByThisTurn")) {
-            if (source.getDamageHistory().getDamageDoneThisTurn(true, true, null, "You", card, controller, spellAbility) == 0) {
-                return false;
-            }
-        } else if (property.startsWith("controllerWasDealtDamageByThisTurn")) {
-            if (source.getDamageHistory().getDamageDoneThisTurn(null, true, null, "You", card, controller, spellAbility) == 0) {
-                return false;
-            }
         } else if (property.startsWith("wasDealtDamageThisTurn")) {
             if (card.getAssignedDamage() == 0) {
                 return false;
@@ -1185,6 +1179,8 @@ public class CardProperty {
             }
         } else if (property.startsWith("dealtDamagetoAny")) {
             return card.getDamageHistory().getHasdealtDamagetoAny();
+        } else if (property.startsWith("dealtCombatDamagetoAny")) {
+            return card.getDamageHistory().getHasdealtCombatDamagetoAny();
         } else if (property.startsWith("attackedThisTurn")) {
             if (card.getDamageHistory().getCreatureAttacksThisTurn() == 0) {
                 return false;
@@ -1473,18 +1469,22 @@ public class CardProperty {
             if (!card.hasCounters()) {
                 return false;
             }
-        }
-        else if (property.startsWith("counters")) {
+        } else if (property.startsWith("counters")) {
             // syntax example: counters_GE9_P1P1 or counters_LT12_TIME
             final String[] splitProperty = property.split("_");
             final String strNum = splitProperty[1].substring(2);
             final String comparator = splitProperty[1].substring(0, 2);
-            final String counterType = splitProperty[2];
+            final CounterType cType = CounterType.getType(splitProperty[2]);
             final int number = AbilityUtils.calculateAmount(source, strNum, spellAbility);
 
-            final int actualnumber = card.getCounters(CounterType.getType(counterType));
+            final int actualNumber;
+            if (splitProperty[0].endsWith("ReceivedThisTurn")) {
+                actualNumber = game.getCounterAddedThisTurn(cType, splitProperty[3], "Card.StrictlySelf", card, controller, spellAbility);
+            } else {
+                actualNumber = card.getCounters(cType);
+            }
 
-            if (!Expressions.compare(actualnumber, comparator, number)) {
+            if (!Expressions.compare(actualNumber, comparator, number)) {
                 return false;
             }
         }
@@ -1753,6 +1753,11 @@ public class CardProperty {
                 return false;
             }
             return card.getCastSA().isGiftPromised();
+        } else if (property.equals("Teamwork")) {
+            if (card.getCastSA() == null) {
+                return false;
+            }
+            return card.getCastSA().isTeamwork();
         } else if (property.equals("impended")) {
             if (card.getCastSA() == null) {
                 return false;
@@ -1839,6 +1844,10 @@ public class CardProperty {
             if (!card.isSuspected()) {
                 return false;
             }
+        } else if (property.equals("IsPrepared")) {
+            if (!card.isPrepared()) {
+                return false;
+            }
         } else if (property.equals("IsRemembered")) {
             if (!source.isRemembered(card)) {
                 return false;
@@ -1861,6 +1870,10 @@ public class CardProperty {
             }
         } else if (property.equals("canBeTurnedFaceUp")) {
             if (!card.canBeTurnedFaceUp()) {
+                return false;
+            }
+        } else if (property.equals("canBeBeamedUp")) {
+            if (StaticAbilityCantBeBeamedUp.cantBeBeamedUp(card)) {
                 return false;
             }
         } else if (property.equals("NoAbilities")) {

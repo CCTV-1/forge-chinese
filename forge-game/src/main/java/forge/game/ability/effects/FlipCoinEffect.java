@@ -160,6 +160,11 @@ public class FlipCoinEffect extends SpellAbilityEffect {
                     }
                 }
             }
+
+            if (amount > 0) {
+                final Map<AbilityKey, Object> runParams = AbilityKey.mapFromPlayer(flipper);
+                flipper.getGame().getTriggerHandler().runTrigger(TriggerType.FlippedCoinOnce, runParams, false);
+            }
         }
     }
 
@@ -212,7 +217,7 @@ public class FlipCoinEffect extends SpellAbilityEffect {
             }
         }
 
-        boolean result = flipResults.size() == 1 ? flipResults.iterator().next() : flipper.getController().chooseFlipResult(sa, flipper, true);
+        boolean result = flipResults.size() == 1 ? flipResults.iterator().next() : flipper.getController().chooseFlipResult(sa, flipper, !noCall);
         boolean wonOrHeads = result == choice;
 
         String outcome;
@@ -221,7 +226,7 @@ public class FlipCoinEffect extends SpellAbilityEffect {
         } else {
             outcome = wonOrHeads ? Localizer.getInstance().getMessage("lblWin") : Localizer.getInstance().getMessage("lblLose");
         }
-        // Play the Flip A Coin sound
+
         flipper.getGame().fireEvent(new GameEventFlipCoin());
         flipper.getGame().getAction().notifyOfValue(sa, flipper, outcome, null);
 
